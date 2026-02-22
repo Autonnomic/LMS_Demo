@@ -1,6 +1,6 @@
-# Refactor
+# Demo
 
-Next.js app with login, signup, and role-based dashboards (student, professor, admin).
+Next.js app with login, signup, and role-based dashboards (student, professor, admin). MVP for demo purposes.
 
 ## Run locally
 
@@ -14,7 +14,7 @@ Open [http://localhost:3000](http://localhost:3000). Root is the **login** page.
 ## Flow
 
 1. **Sign up** — New users sign up at `/signup`. They get a profile with **no role** (pending).
-2. **Pending** — After login, if the user has no role yet, they see a “Account pending” page until an admin assigns a role.
+2. **Pending** — After login, if the user has no role yet, they see a "Account pending" page until an admin assigns a role.
 3. **Admin** — An admin logs in and goes to the admin dashboard. They see **pending signups**, choose a role (student / professor / admin), and click **Assign role**.
 4. **Login** — Once a role is set, the user can log in and is redirected to their role dashboard (`/dashboard/student`, `/dashboard/professor`, or `/dashboard/admin`). (Email notification on role assignment can be added later.)
 
