@@ -47,8 +47,9 @@ export default function LoginPage() {
       return
     }
     const role = profile.role as string
-    router.push(`/dashboard/${role}`)
-    router.refresh()
+    // Debug: Log the role to verify it's correct
+    console.log('User role:', role, 'Redirecting to:', `/dashboard/${role}`)
+    router.replace(`/dashboard/${role}`)
   }
 
   return (
