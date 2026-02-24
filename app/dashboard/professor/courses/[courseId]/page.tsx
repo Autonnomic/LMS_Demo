@@ -43,6 +43,34 @@ interface AttendanceRecord {
   notes: string | null
 }
 
+interface Assignment {
+  id: string
+  title: string
+  description: string | null
+  due_date: string
+  max_points: number
+  assignment_type: string | null
+  instructions: string | null
+  submission_count?: number
+}
+
+interface Submission {
+  id: string
+  student_id: string
+  submitted_at: string
+  file_url: string | null
+  file_name: string | null
+  submission_text: string | null
+  status: string
+  grade: number | null
+  feedback: string | null
+  student: {
+    first_name: string | null
+    last_name: string | null
+    email: string | null
+  }
+}
+
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export default function ProfessorCourseDetail() {
@@ -56,7 +84,7 @@ export default function ProfessorCourseDetail() {
   const [allStudents, setAllStudents] = useState<Student[]>([])
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0])
   const [attendanceRecords, setAttendanceRecords] = useState<Record<string, AttendanceRecord>>({})
-  const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'schedule' | 'students'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'schedule' | 'students' | 'assignments'>('overview')
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
   const [newSchedule, setNewSchedule] = useState({
     day_of_week: 1,
@@ -67,10 +95,35 @@ export default function ProfessorCourseDetail() {
   const [userName, setUserName] = useState<string>('')
   const [userInitials, setUserInitials] = useState<string>('')
   const [courses, setCourses] = useState<Course[]>([])
+  const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null)
+  const [showAssignmentForm, setShowAssignmentForm] = useState(false)
+  const [viewingSubmissions, setViewingSubmissions] = useState<string | null>(null)
+  const [submissions, setSubmissions] = useState<Submission[]>([])
+  const [gradingSubmission, setGradingSubmission] = useState<string | null>(null)
+  const [gradeValue, setGradeValue] = useState<number>(0)
+  const [feedbackText, setFeedbackText] = useState<string>('')
+  const [newAssignment, setNewAssignment] = useState({
+    title: '',
+    description: '',
+    due_date: '',
+    due_time: '',
+    max_points: 100,
+    assignment_type: '',
+    instructions: ''
+  })
+  const [assignmentTemplates, setAssignmentTemplates] = useState([
+    { name: 'Homework', type: 'homework', points: 100, description: 'Weekly homework assignment' },
+    { name: 'Quiz', type: 'quiz', points: 50, description: 'Short quiz assessment' },
+    { name: 'Project', type: 'project', points: 200, description: 'Major project assignment' },
+    { name: 'Exam', type: 'exam', points: 300, description: 'Final exam' },
+    { name: 'Lab', type: 'lab', points: 100, description: 'Laboratory assignment' }
+  ])
 
   useEffect(() => {
     fetchCourseData()
     fetchAllCourses()
+    fetchAssignments()
   }, [courseId])
 
   useEffect(() => {
@@ -221,6 +274,339 @@ export default function ProfessorCourseDetail() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function fetchAssignments() {
+    try {
+      const { data: assignmentsData } = await supabase
+        .from('assignments')
+        .select('*')
+        .eq('course_id', courseId)
+        .order('due_date', { ascending: true })
+
+      if (assignmentsData) {
+        // Fetch submission counts separately
+        const assignmentsWithCounts = await Promise.all(
+          assignmentsData.map(async (assignment: any) => {
+            const { count } = await supabase
+              .from('assignment_submissions')
+              .select('*', { count: 'exact', head: true })
+              .eq('assignment_id', assignment.id)
+            
+            return {
+              ...assignment,
+              submission_count: count || 0
+            }
+          })
+        )
+        setAssignments(assignmentsWithCounts as Assignment[])
+      }
+    } catch (error) {
+      console.error('Error fetching assignments:', error)
+    }
+  }
+
+  async function handleCreateAssignment(e: React.FormEvent) {
+    e.preventDefault()
+    try {
+      const dueDateTime = newAssignment.due_date && newAssignment.due_time
+        ? `${newAssignment.due_date}T${newAssignment.due_time}:00`
+        : newAssignment.due_date
+
+      // Save assignment data before resetting
+      const assignmentTitle = newAssignment.title
+      const assignmentDueDate = dueDateTime
+
+      const { data: insertedAssignment, error } = await supabase
+        .from('assignments')
+        .insert({
+          course_id: courseId,
+          title: newAssignment.title,
+          description: newAssignment.description || null,
+          due_date: dueDateTime,
+          max_points: newAssignment.max_points,
+          assignment_type: newAssignment.assignment_type || null,
+          instructions: newAssignment.instructions || null
+        })
+        .select()
+        .single()
+
+      if (error) throw error
+
+      setShowAssignmentForm(false)
+      setNewAssignment({
+        title: '',
+        description: '',
+        due_date: '',
+        due_time: '',
+        max_points: 100,
+        assignment_type: '',
+        instructions: ''
+      })
+      await fetchAssignments()
+      
+      // Create notifications for all enrolled students
+      if (insertedAssignment) {
+        try {
+          const { data: enrolledStudents } = await supabase
+            .from('course_registrations')
+            .select('student_id')
+            .eq('course_id', courseId)
+            .eq('status', 'enrolled')
+
+          if (enrolledStudents) {
+            // Get session token for authentication
+            const { data: { session } } = await supabase.auth.getSession()
+            
+            for (const enrollment of enrolledStudents) {
+              try {
+                const response = await fetch('/api/notifications/create', {
+                  method: 'POST',
+                  headers: { 
+                    'Content-Type': 'application/json',
+                    ...(session?.access_token && { 'Authorization': `Bearer ${session.access_token}` })
+                  },
+                  credentials: 'include',
+                  body: JSON.stringify({
+                    userId: enrollment.student_id,
+                    title: 'New Assignment',
+                    message: `New assignment "${assignmentTitle}" has been posted. Due: ${assignmentDueDate ? new Date(assignmentDueDate).toLocaleString() : 'No due date'}`,
+                    type: 'assignment',
+                    relatedId: insertedAssignment.id
+                  })
+                })
+                if (!response.ok) {
+                  const error = await response.json()
+                  console.error('Failed to create notification:', error)
+                }
+              } catch (err) {
+                console.error('Error creating notification:', err)
+              }
+            }
+          }
+        } catch (notifError) {
+          console.error('Error creating notifications:', notifError)
+          // Don't fail the assignment creation if notifications fail
+        }
+      }
+    } catch (error) {
+      console.error('Error creating assignment:', error)
+      alert('Failed to create assignment')
+    }
+  }
+
+  async function handleUpdateAssignment(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editingAssignment) return
+
+    try {
+      const dueDateTime = newAssignment.due_date && newAssignment.due_time
+        ? `${newAssignment.due_date}T${newAssignment.due_time}:00`
+        : newAssignment.due_date
+
+      const { error } = await supabase
+        .from('assignments')
+        .update({
+          title: newAssignment.title,
+          description: newAssignment.description || null,
+          due_date: dueDateTime,
+          max_points: newAssignment.max_points,
+          assignment_type: newAssignment.assignment_type || null,
+          instructions: newAssignment.instructions || null
+        })
+        .eq('id', editingAssignment.id)
+
+      if (error) throw error
+
+      setEditingAssignment(null)
+      setShowAssignmentForm(false)
+      setNewAssignment({
+        title: '',
+        description: '',
+        due_date: '',
+        due_time: '',
+        max_points: 100,
+        assignment_type: '',
+        instructions: ''
+      })
+      await fetchAssignments()
+    } catch (error) {
+      console.error('Error updating assignment:', error)
+      alert('Failed to update assignment')
+    }
+  }
+
+  async function handleDeleteAssignment(assignmentId: string) {
+    if (!confirm('Are you sure you want to delete this assignment? This will also delete all submissions.')) {
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('assignments')
+        .delete()
+        .eq('id', assignmentId)
+
+      if (error) throw error
+
+      await fetchAssignments()
+    } catch (error) {
+      console.error('Error deleting assignment:', error)
+      alert('Failed to delete assignment')
+    }
+  }
+
+  function useTemplate(template: typeof assignmentTemplates[0]) {
+    setNewAssignment({
+      title: '',
+      description: template.description,
+      due_date: '',
+      due_time: '',
+      max_points: template.points,
+      assignment_type: template.type,
+      instructions: ''
+    })
+    setShowAssignmentForm(true)
+  }
+
+  function startEditAssignment(assignment: Assignment) {
+    const dueDate = new Date(assignment.due_date)
+    setEditingAssignment(assignment)
+    setNewAssignment({
+      title: assignment.title,
+      description: assignment.description || '',
+      due_date: dueDate.toISOString().split('T')[0],
+      due_time: dueDate.toTimeString().slice(0, 5),
+      max_points: assignment.max_points,
+      assignment_type: assignment.assignment_type || '',
+      instructions: assignment.instructions || ''
+    })
+    setShowAssignmentForm(true)
+  }
+
+  async function fetchSubmissions(assignmentId: string) {
+    try {
+      const { data: submissionsData } = await supabase
+        .from('assignment_submissions')
+        .select(`
+          *,
+          student:user_profiles (
+            first_name,
+            last_name,
+            email
+          )
+        `)
+        .eq('assignment_id', assignmentId)
+        .order('submitted_at', { ascending: false })
+
+      if (submissionsData) {
+        const submissionsList = submissionsData.map((s: any) => ({
+          ...s,
+          student: s.student
+        })) as Submission[]
+        setSubmissions(submissionsList)
+        setViewingSubmissions(assignmentId)
+      }
+    } catch (error) {
+      console.error('Error fetching submissions:', error)
+      alert('Failed to load submissions')
+    }
+  }
+
+  async function handleGradeSubmission(submissionId: string, assignment: Assignment) {
+    try {
+      const { error } = await supabase
+        .from('assignment_submissions')
+        .update({
+          grade: gradeValue,
+          feedback: feedbackText || null
+        })
+        .eq('id', submissionId)
+
+      if (error) throw error
+
+      // Also create/update grade entry
+      const submission = submissions.find(s => s.id === submissionId)
+      if (submission) {
+        // Check if grade already exists
+        const { data: existingGrade } = await supabase
+          .from('grades')
+          .select('id')
+          .eq('student_id', submission.student_id)
+          .eq('course_id', courseId)
+          .eq('assignment_name', assignment.title)
+          .single()
+
+        if (existingGrade) {
+          // Update existing grade
+          await supabase
+            .from('grades')
+            .update({
+              grade: gradeValue,
+              max_grade: assignment.max_points
+            })
+            .eq('id', existingGrade.id)
+        } else {
+          // Insert new grade
+          await supabase
+            .from('grades')
+            .insert({
+              student_id: submission.student_id,
+              course_id: courseId,
+              assignment_name: assignment.title,
+              grade: gradeValue,
+              max_grade: assignment.max_points,
+              assignment_type: assignment.assignment_type || null
+            })
+        }
+      }
+
+      setGradingSubmission(null)
+      setGradeValue(0)
+      setFeedbackText('')
+      await fetchSubmissions(assignment.id)
+      
+      // Create notification for student about grade
+      try {
+        const submission = submissions.find(s => s.id === submissionId)
+        if (submission) {
+          // Get session token for authentication
+          const { data: { session } } = await supabase.auth.getSession()
+          
+          const response = await fetch('/api/notifications/create', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              ...(session?.access_token && { 'Authorization': `Bearer ${session.access_token}` })
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              userId: submission.student_id,
+              title: 'Assignment Graded',
+              message: `Your assignment "${assignment.title}" has been graded. Grade: ${gradeValue} / ${assignment.max_points}`,
+              type: 'grade',
+              relatedId: assignment.id
+            })
+          })
+          if (!response.ok) {
+            const error = await response.json()
+            console.error('Failed to create grade notification:', error)
+          }
+        }
+      } catch (notifError) {
+        console.error('Error creating grade notification:', notifError)
+        // Don't fail grading if notification fails
+      }
+    } catch (error) {
+      console.error('Error grading submission:', error)
+      alert('Failed to grade submission')
+    }
+  }
+
+  function startGrading(submission: Submission, assignment: Assignment) {
+    setGradingSubmission(submission.id)
+    setGradeValue(submission.grade || 0)
+    setFeedbackText(submission.feedback || '')
   }
 
   async function fetchAttendanceForDate(date: string) {
@@ -518,6 +904,12 @@ export default function ProfessorCourseDetail() {
               onClick={() => setActiveTab('students')}
             >
               Students
+            </button>
+            <button
+              className={`professor-tab ${activeTab === 'assignments' ? 'active' : ''}`}
+              onClick={() => setActiveTab('assignments')}
+            >
+              Assignments
             </button>
           </div>
 
@@ -945,6 +1337,523 @@ export default function ProfessorCourseDetail() {
                   <p style={{ color: 'var(--text-muted)' }}>All students are already enrolled</p>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Assignments Tab */}
+          {activeTab === 'assignments' && (
+            <div className="professor-tab-content">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3>Assignments ({assignments.length})</h3>
+                <button
+                  onClick={() => {
+                    setEditingAssignment(null)
+                    setNewAssignment({
+                      title: '',
+                      description: '',
+                      due_date: '',
+                      due_time: '',
+                      max_points: 100,
+                      assignment_type: '',
+                      instructions: ''
+                    })
+                    setShowAssignmentForm(true)
+                  }}
+                  className="btn-primary"
+                  style={{ padding: '0.5rem 1rem' }}
+                >
+                  + Create Assignment
+                </button>
+              </div>
+
+              {/* Assignment Templates */}
+              {!showAssignmentForm && (
+                <div style={{ marginBottom: '2rem', padding: '1rem', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                  <h4 style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>
+                    Quick Templates
+                  </h4>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    {assignmentTemplates.map((template, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => useTemplate(template)}
+                        style={{
+                          padding: '0.5rem 1rem',
+                          background: 'white',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.875rem',
+                          color: 'var(--text)',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--teal-bright)'
+                          e.currentTarget.style.color = 'var(--teal-bright)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = '#d1d5db'
+                          e.currentTarget.style.color = 'var(--text)'
+                        }}
+                      >
+                        {template.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Assignment Form */}
+              {showAssignmentForm && (
+                <div style={{ marginBottom: '2rem', padding: '1.5rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                  <h4 style={{ marginBottom: '1rem', color: 'var(--text)' }}>
+                    {editingAssignment ? 'Edit Assignment' : 'Create New Assignment'}
+                  </h4>
+                  <form onSubmit={editingAssignment ? handleUpdateAssignment : handleCreateAssignment}>
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                        Title *
+                      </label>
+                      <input
+                        type="text"
+                        value={newAssignment.title}
+                        onChange={(e) => setNewAssignment({ ...newAssignment, title: e.target.value })}
+                        className="form-control"
+                        required
+                        placeholder="Assignment title"
+                      />
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                        Description
+                      </label>
+                      <textarea
+                        value={newAssignment.description}
+                        onChange={(e) => setNewAssignment({ ...newAssignment, description: e.target.value })}
+                        className="form-control"
+                        rows={3}
+                        placeholder="Assignment description"
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                      <div className="form-group">
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                          Due Date *
+                        </label>
+                        <input
+                          type="date"
+                          value={newAssignment.due_date}
+                          onChange={(e) => setNewAssignment({ ...newAssignment, due_date: e.target.value })}
+                          className="form-control"
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                          Due Time
+                        </label>
+                        <input
+                          type="time"
+                          value={newAssignment.due_time}
+                          onChange={(e) => setNewAssignment({ ...newAssignment, due_time: e.target.value })}
+                          className="form-control"
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                          Max Points *
+                        </label>
+                        <input
+                          type="number"
+                          value={newAssignment.max_points}
+                          onChange={(e) => setNewAssignment({ ...newAssignment, max_points: parseFloat(e.target.value) || 0 })}
+                          className="form-control"
+                          required
+                          min="0"
+                          step="0.1"
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                          Type
+                        </label>
+                        <select
+                          value={newAssignment.assignment_type}
+                          onChange={(e) => setNewAssignment({ ...newAssignment, assignment_type: e.target.value })}
+                          className="form-control"
+                        >
+                          <option value="">Select type</option>
+                          <option value="homework">Homework</option>
+                          <option value="quiz">Quiz</option>
+                          <option value="project">Project</option>
+                          <option value="exam">Exam</option>
+                          <option value="lab">Lab</option>
+                          <option value="essay">Essay</option>
+                          <option value="presentation">Presentation</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: '1rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                        Instructions
+                      </label>
+                      <textarea
+                        value={newAssignment.instructions}
+                        onChange={(e) => setNewAssignment({ ...newAssignment, instructions: e.target.value })}
+                        className="form-control"
+                        rows={4}
+                        placeholder="Detailed instructions for students"
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button type="submit" className="btn-primary">
+                        {editingAssignment ? 'Update Assignment' : 'Create Assignment'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowAssignmentForm(false)
+                          setEditingAssignment(null)
+                          setNewAssignment({
+                            title: '',
+                            description: '',
+                            due_date: '',
+                            due_time: '',
+                            max_points: 100,
+                            assignment_type: '',
+                            instructions: ''
+                          })
+                        }}
+                        className="btn-secondary"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Assignments List */}
+              {assignments.length > 0 ? (
+                <div className="table-container">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Title</th>
+                        <th>Type</th>
+                        <th>Due Date</th>
+                        <th>Points</th>
+                        <th>Submissions</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assignments.map((assignment) => {
+                        const dueDate = new Date(assignment.due_date)
+                        const isOverdue = dueDate < new Date()
+                        return (
+                          <tr key={assignment.id}>
+                            <td>
+                              <div style={{ fontWeight: 500 }}>{assignment.title}</div>
+                              {assignment.description && (
+                                <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                                  {assignment.description.substring(0, 50)}
+                                  {assignment.description.length > 50 ? '...' : ''}
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              {assignment.assignment_type ? (
+                                <span style={{
+                                  padding: '0.25rem 0.5rem',
+                                  borderRadius: '4px',
+                                  fontSize: '0.75rem',
+                                  background: '#f3f4f6',
+                                  color: 'var(--text)'
+                                }}>
+                                  {assignment.assignment_type}
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>-</span>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ color: isOverdue ? '#ef4444' : 'var(--text)' }}>
+                                {dueDate.toLocaleDateString()}
+                              </div>
+                              <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                                {dueDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </div>
+                            </td>
+                            <td>{assignment.max_points}</td>
+                            <td>
+                              <button
+                                onClick={() => fetchSubmissions(assignment.id)}
+                                style={{
+                                  padding: '0.25rem 0.75rem',
+                                  background: assignment.submission_count && assignment.submission_count > 0 ? 'var(--teal-bright)' : '#9ca3af',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600
+                                }}
+                              >
+                                {assignment.submission_count || 0} Submission{(assignment.submission_count || 0) !== 1 ? 's' : ''}
+                              </button>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <button
+                                  onClick={() => fetchSubmissions(assignment.id)}
+                                  style={{
+                                    padding: '0.25rem 0.75rem',
+                                    background: 'var(--teal-bright)',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.75rem'
+                                  }}
+                                >
+                                  View
+                                </button>
+                                <button
+                                  onClick={() => startEditAssignment(assignment)}
+                                  style={{
+                                    padding: '0.25rem 0.75rem',
+                                    background: '#3b82f6',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.75rem'
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteAssignment(assignment.id)}
+                                  style={{
+                                    padding: '0.25rem 0.75rem',
+                                    background: '#ef4444',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.75rem'
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{
+                  padding: '3rem',
+                  textAlign: 'center',
+                  color: 'var(--text-muted)',
+                  background: 'white',
+                  borderRadius: '8px',
+                  border: '1px solid #e5e7eb'
+                }}>
+                  {showAssignmentForm ? null : <p>No assignments yet. Create your first assignment!</p>}
+                </div>
+              )}
+
+              {/* Submissions View */}
+              {viewingSubmissions && (
+                <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                    <h3>
+                      Submissions for: {assignments.find(a => a.id === viewingSubmissions)?.title}
+                    </h3>
+                    <button
+                      onClick={() => {
+                        setViewingSubmissions(null)
+                        setSubmissions([])
+                      }}
+                      className="btn-secondary"
+                      style={{ padding: '0.5rem 1rem' }}
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  {submissions.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                      {submissions.map((submission) => {
+                        const assignment = assignments.find(a => a.id === viewingSubmissions)
+                        const isGrading = gradingSubmission === submission.id
+                        return (
+                          <div
+                            key={submission.id}
+                            style={{
+                              padding: '1.5rem',
+                              background: '#f9fafb',
+                              borderRadius: '8px',
+                              border: '1px solid #e5e7eb'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                              <div>
+                                <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text)', marginBottom: '0.25rem' }}>
+                                  {submission.student.first_name} {submission.student.last_name}
+                                </div>
+                                <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                                  {submission.student.email}
+                                </div>
+                                <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                                  Submitted: {new Date(submission.submitted_at).toLocaleString()}
+                                </div>
+                              </div>
+                              {submission.grade !== null && (
+                                <div style={{ textAlign: 'right' }}>
+                                  <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                                    Grade
+                                  </div>
+                                  <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#10b981' }}>
+                                    {submission.grade} / {assignment?.max_points || 0}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {submission.submission_text && (
+                              <div style={{ marginBottom: '1rem', padding: '1rem', background: 'white', borderRadius: '6px' }}>
+                                <div style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text)' }}>
+                                  Submission Text:
+                                </div>
+                                <div style={{ color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+                                  {submission.submission_text}
+                                </div>
+                              </div>
+                            )}
+
+                            {submission.file_name && (
+                              <div style={{ marginBottom: '1rem' }}>
+                                <div style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text)' }}>
+                                  Submitted File:
+                                </div>
+                                <a
+                                  href={submission.file_url || '#'}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    padding: '0.5rem 1rem',
+                                    background: 'var(--teal-bright)',
+                                    color: 'white',
+                                    textDecoration: 'none',
+                                    borderRadius: '6px',
+                                    fontSize: '0.875rem'
+                                  }}
+                                >
+                                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  {submission.file_name}
+                                </a>
+                              </div>
+                            )}
+
+                            {submission.feedback && (
+                              <div style={{ marginBottom: '1rem', padding: '1rem', background: '#fef3c7', borderRadius: '6px' }}>
+                                <div style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text)' }}>
+                                  Feedback:
+                                </div>
+                                <div style={{ color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+                                  {submission.feedback}
+                                </div>
+                              </div>
+                            )}
+
+                            {isGrading ? (
+                              <div style={{ padding: '1rem', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                                <div style={{ marginBottom: '1rem' }}>
+                                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                                    Grade (out of {assignment?.max_points || 0})
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={gradeValue}
+                                    onChange={(e) => setGradeValue(parseFloat(e.target.value) || 0)}
+                                    className="form-control"
+                                    min="0"
+                                    max={assignment?.max_points || 100}
+                                    step="0.1"
+                                    style={{ maxWidth: '200px' }}
+                                  />
+                                </div>
+                                <div style={{ marginBottom: '1rem' }}>
+                                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                                    Feedback
+                                  </label>
+                                  <textarea
+                                    value={feedbackText}
+                                    onChange={(e) => setFeedbackText(e.target.value)}
+                                    className="form-control"
+                                    rows={4}
+                                    placeholder="Provide feedback to the student..."
+                                  />
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                  <button
+                                    onClick={() => assignment && handleGradeSubmission(submission.id, assignment)}
+                                    className="btn-primary"
+                                    style={{ padding: '0.5rem 1rem' }}
+                                  >
+                                    Save Grade
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setGradingSubmission(null)
+                                      setGradeValue(0)
+                                      setFeedbackText('')
+                                    }}
+                                    className="btn-secondary"
+                                    style={{ padding: '0.5rem 1rem' }}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => assignment && startGrading(submission, assignment)}
+                                className="btn-primary"
+                                style={{ padding: '0.5rem 1rem' }}
+                              >
+                                {submission.grade !== null ? 'Update Grade' : 'Grade Submission'}
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                      <p>No submissions yet for this assignment.</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

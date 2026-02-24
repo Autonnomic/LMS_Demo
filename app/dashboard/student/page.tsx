@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Sidebar from './components/Sidebar'
+import Notifications from './components/Notifications'
+import Chat from './components/Chat'
+import { ChatProvider } from './components/ChatContext'
 
 interface Course {
   id: string
@@ -26,6 +29,8 @@ export default function StudentDashboard() {
   const [courses, setCourses] = useState<Course[]>([])
   const [userName, setUserName] = useState<string>('')
   const [userInitials, setUserInitials] = useState<string>('')
+  const [userId, setUserId] = useState<string>('')
+  const [userRole, setUserRole] = useState<'student' | 'professor'>('student')
 
   useEffect(() => {
     fetchDashboardData()
@@ -59,6 +64,8 @@ export default function StudentDashboard() {
         setUserInitials(
           (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || 'S'
         )
+        setUserId(user.id)
+        setUserRole(profile.role as 'student' | 'professor')
       }
 
       // Fetch enrolled courses
@@ -133,15 +140,18 @@ export default function StudentDashboard() {
   }
 
   return (
-    <div className="canvas-layout">
-      {/* Sidebar */}
-      <Sidebar courses={courses.map(c => ({ id: c.id, code: c.code, name: c.name }))} />
+    <ChatProvider>
+      <div className="canvas-layout">
+        {/* Sidebar */}
+        <Sidebar courses={courses.map(c => ({ id: c.id, code: c.code, name: c.name }))} />
 
       {/* Main Content */}
       <main className="canvas-main-content">
         <div className="canvas-topbar">
           <h1 className="canvas-topbar-title">Dashboard</h1>
-          <div className="canvas-topbar-actions">
+          <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            {userId && <Notifications userId={userId} />}
+            {userId && <Chat userId={userId} userRole={userRole} />}
             <div className="canvas-user-menu" onClick={handleLogout}>
               <div className="canvas-user-avatar">{userInitials}</div>
               <div>
@@ -218,6 +228,7 @@ export default function StudentDashboard() {
           </div>
         </div>
       </main>
-    </div>
+      </div>
+    </ChatProvider>
   )
 }

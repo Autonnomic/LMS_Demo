@@ -5,6 +5,10 @@ import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '../../components/Sidebar'
+import { useChat } from '../../components/ChatContext'
+import Chat from '../../components/Chat'
+import Notifications from '../../components/Notifications'
+import { ChatProvider } from '../../components/ChatContext'
 
 interface Course {
   id: string
@@ -44,10 +48,11 @@ interface CourseTopic {
   scheduled_date: string
 }
 
-export default function CourseDetailPage() {
+function CourseDetailPageContent() {
   const router = useRouter()
   const params = useParams()
   const courseId = params.courseId as string
+  const { setStartWithUserId, setOpenChat } = useChat()
   const [loading, setLoading] = useState(true)
   const [course, setCourse] = useState<Course | null>(null)
   const [schedule, setSchedule] = useState<Schedule[]>([])
@@ -56,6 +61,8 @@ export default function CourseDetailPage() {
   const [allCourses, setAllCourses] = useState<Course[]>([])
   const [userName, setUserName] = useState<string>('')
   const [userInitials, setUserInitials] = useState<string>('')
+  const [currentUserId, setCurrentUserId] = useState<string>('')
+  const [userRole, setUserRole] = useState<'student' | 'professor'>('student')
 
   const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -82,6 +89,8 @@ export default function CourseDetailPage() {
         setUserInitials(
           (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || 'S'
         )
+        setCurrentUserId(user.id)
+        setUserRole(profile.role as 'student' | 'professor')
       }
 
       const { data: coursesData } = await supabase
@@ -153,7 +162,36 @@ export default function CourseDetailPage() {
       const { data: studentsData, error: studentsError } = await supabase
         .rpc('get_enrolled_students', { p_course_id: courseId })
 
-      if (studentsData && !studentsError) {
+      if (studentsError) {
+        console.error('Error fetching enrolled students:', studentsError)
+        // Fallback: try direct query if RPC fails
+        const { data: fallbackData } = await supabase
+          .from('course_registrations')
+          .select(`
+            student_id,
+            student:user_profiles!course_registrations_student_id_fkey(
+              id,
+              first_name,
+              last_name,
+              email
+            )
+          `)
+          .eq('course_id', courseId)
+          .eq('status', 'enrolled')
+
+        if (fallbackData) {
+          setEnrolledStudents(
+            fallbackData
+              .filter((reg: any) => reg.student)
+              .map((reg: any) => ({
+                id: reg.student.id,
+                first_name: reg.student.first_name,
+                last_name: reg.student.last_name,
+                email: reg.student.email
+              }))
+          )
+        }
+      } else if (studentsData) {
         setEnrolledStudents(
           studentsData.map((s: any) => ({
             id: s.student_id,
@@ -269,7 +307,9 @@ export default function CourseDetailPage() {
       <main className="canvas-main-content">
         <div className="canvas-topbar">
           <h1 className="canvas-topbar-title">{course.code} - {course.name}</h1>
-          <div className="canvas-topbar-actions">
+          <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            {currentUserId && <Notifications userId={currentUserId} />}
+            {currentUserId && <Chat userId={currentUserId} userRole={userRole} />}
             <div className="canvas-user-menu" onClick={handleLogout}>
               <div className="canvas-user-avatar">{userInitials}</div>
               <div>
@@ -367,6 +407,25 @@ export default function CourseDetailPage() {
                           {course.professor.email}
                         </p>
                       )}
+                      <button
+                        onClick={() => {
+                          setStartWithUserId(course.professor.id)
+                          setOpenChat(true)
+                        }}
+                        style={{
+                          marginTop: '0.5rem',
+                          padding: '0.5rem 1rem',
+                          background: 'var(--teal-bright)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.875rem',
+                          fontWeight: 500
+                        }}
+                      >
+                        Message
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -382,7 +441,7 @@ export default function CourseDetailPage() {
                         <div className="student-avatar">
                           {getInitials(student.first_name, student.last_name)}
                         </div>
-                        <div className="student-info">
+                        <div className="student-info" style={{ flex: 1 }}>
                           <div className="student-name">
                             {student.first_name} {student.last_name}
                           </div>
@@ -392,6 +451,27 @@ export default function CourseDetailPage() {
                             </div>
                           )}
                         </div>
+                        {student.id !== currentUserId && (
+                          <button
+                            onClick={() => {
+                              setStartWithUserId(student.id)
+                              setOpenChat(true)
+                            }}
+                            style={{
+                              padding: '0.375rem 0.75rem',
+                              background: 'var(--teal-bright)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '0.75rem',
+                              fontWeight: 500,
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            Message
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -403,6 +483,14 @@ export default function CourseDetailPage() {
           </div>
         </div>
       </main>
-    </div>
+      </div>
+  )
+}
+
+export default function CourseDetailPage() {
+  return (
+    <ChatProvider>
+      <CourseDetailPageContent />
+    </ChatProvider>
   )
 }

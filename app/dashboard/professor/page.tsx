@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import Chat from '../student/components/Chat'
+import { ChatProvider } from '../student/components/ChatContext'
 import AutonnomicLogo from '../student/components/AutonnomicLogo'
 
 interface Course {
@@ -23,6 +25,8 @@ export default function ProfessorDashboard() {
   const [courses, setCourses] = useState<Course[]>([])
   const [userName, setUserName] = useState<string>('')
   const [userInitials, setUserInitials] = useState<string>('')
+  const [userId, setUserId] = useState<string>('')
+  const [userRole, setUserRole] = useState<'student' | 'professor'>('professor')
 
   useEffect(() => {
     fetchDashboardData()
@@ -56,6 +60,8 @@ export default function ProfessorDashboard() {
         setUserInitials(
           (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || 'P'
         )
+        setUserId(user.id)
+        setUserRole(profile.role as 'student' | 'professor')
       }
 
       // Fetch courses taught by this professor
@@ -117,9 +123,10 @@ export default function ProfessorDashboard() {
   }
 
   return (
-    <div className="canvas-layout">
-      {/* Sidebar */}
-      <aside className="canvas-sidebar">
+    <ChatProvider>
+      <div className="canvas-layout">
+        {/* Sidebar */}
+        <aside className="canvas-sidebar">
         <div className="canvas-sidebar-header">
           <div className="sidebar-logo-container">
             <AutonnomicLogo />
@@ -154,7 +161,8 @@ export default function ProfessorDashboard() {
       <main className="canvas-main-content">
         <div className="canvas-topbar">
           <h1 className="canvas-topbar-title">Professor Dashboard</h1>
-          <div className="canvas-topbar-actions">
+          <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            {userId && <Chat userId={userId} userRole={userRole} />}
             <div className="canvas-user-menu" onClick={handleLogout}>
               <div className="canvas-user-avatar">{userInitials}</div>
               <div>
@@ -221,6 +229,7 @@ export default function ProfessorDashboard() {
           </div>
         </div>
       </main>
-    </div>
+      </div>
+    </ChatProvider>
   )
 }
