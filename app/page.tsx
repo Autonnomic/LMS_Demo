@@ -33,22 +33,25 @@ export default function LoginPage() {
     }
     const { data: profile, error: profileError } = await supabase
       .from('user_profiles')
-      .select('role')
+      .select('role, must_reset_password')
       .eq('id', userId)
       .single()
     setLoading(false)
-    if (profileError) {
-      setError(profileError.message)
+
+    let role = profile?.role as string | undefined
+    if (profileError || !role) {
+      const res = await fetch('/api/self-assign-student', { method: 'POST' })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        setError(json.error || 'Could not complete signup.')
+        return
+      }
+      role = 'student'
+    }
+    if (role === 'professor' && profile?.must_reset_password) {
+      router.replace('/reset-password')
       return
     }
-    if (!profile?.role) {
-      router.push('/pending')
-      router.refresh()
-      return
-    }
-    const role = profile.role as string
-    // Debug: Log the role to verify it's correct
-    console.log('User role:', role, 'Redirecting to:', `/dashboard/${role}`)
     router.replace(`/dashboard/${role}`)
   }
 

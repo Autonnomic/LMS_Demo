@@ -63,6 +63,11 @@ export default function AdminDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [userName, setUserName] = useState<string>('')
   const [userInitials, setUserInitials] = useState<string>('')
+  const [creatingProfessor, setCreatingProfessor] = useState(false)
+  const [professorEmail, setProfessorEmail] = useState('')
+  const [professorTempPassword, setProfessorTempPassword] = useState('')
+  const [professorFirstName, setProfessorFirstName] = useState('')
+  const [professorLastName, setProfessorLastName] = useState('')
 
   useEffect(() => {
     fetchDashboardData()
@@ -248,7 +253,6 @@ export default function AdminDashboard() {
     )
   }
 
-  const pendingUsers = profiles.filter((p) => p.role == null)
   const allUsers = profiles.filter((p) => p.role != null)
 
   return (
@@ -326,59 +330,102 @@ export default function AdminDashboard() {
               <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--navy-dark)', marginBottom: '1rem' }}>
                 User Management
                 </h2>
-              {pendingUsers.length > 0 && (
-                <section style={{ marginBottom: '2rem' }}>
-                  <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>
-                    Pending Signups ({pendingUsers.length})
-                  </h3>
-                  <div className="table-container">
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Email</th>
-                          <th>Name</th>
-                          <th>Role</th>
-                          <th>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pendingUsers.map((p) => (
-                          <tr key={p.id}>
-                            <td>{p.email || p.id}</td>
-                            <td>{[p.first_name, p.last_name].filter(Boolean).join(' ') || '-'}</td>
-                            <td>
-                        <select
-                          id={`role-${p.id}`}
-                                className="form-control"
-                          defaultValue="student"
-                                style={{ width: '100%' }}
-                        >
-                          <option value="student">Student</option>
-                          <option value="professor">Professor</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                            </td>
-                            <td>
-                        <button
-                          type="button"
-                          className="btn-primary"
-                                style={{ padding: '0.5rem 1rem' }}
-                          disabled={assigning === p.id}
-                          onClick={() => {
-                            const sel = document.getElementById(`role-${p.id}`) as HTMLSelectElement
-                                  handleAssignRole(p.id, (sel?.value as 'student' | 'professor' | 'admin') || 'student')
-                          }}
-                        >
-                                {assigning === p.id ? 'Assigning…' : 'Assign'}
-                        </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                      </div>
+              <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                Students sign up on their own and get access immediately. Only admins can add professor accounts; professors must reset their temporary password on first login.
+              </p>
+              <section style={{ marginBottom: '2rem', padding: '1.25rem', background: 'var(--surface-hover)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>
+                  Add professor
+                </h3>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                  Create a professor account by email. They will receive a temporary password and must set a permanent one on first login.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', alignItems: 'end' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label htmlFor="professor-email">Email</label>
+                    <input
+                      id="professor-email"
+                      type="email"
+                      className="form-control"
+                      placeholder="professor@example.com"
+                      value={professorEmail}
+                      onChange={(e) => setProfessorEmail(e.target.value)}
+                      disabled={creatingProfessor}
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label htmlFor="professor-temp-password">Temporary password</label>
+                    <input
+                      id="professor-temp-password"
+                      type="text"
+                      className="form-control"
+                      placeholder="Min 8 characters"
+                      value={professorTempPassword}
+                      onChange={(e) => setProfessorTempPassword(e.target.value)}
+                      disabled={creatingProfessor}
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label htmlFor="professor-first-name">First name (optional)</label>
+                    <input
+                      id="professor-first-name"
+                      type="text"
+                      className="form-control"
+                      placeholder="First name"
+                      value={professorFirstName}
+                      onChange={(e) => setProfessorFirstName(e.target.value)}
+                      disabled={creatingProfessor}
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label htmlFor="professor-last-name">Last name (optional)</label>
+                    <input
+                      id="professor-last-name"
+                      type="text"
+                      className="form-control"
+                      placeholder="Last name"
+                      value={professorLastName}
+                      onChange={(e) => setProfessorLastName(e.target.value)}
+                      disabled={creatingProfessor}
+                    />
+                  </div>
+                </div>
+                <div style={{ marginTop: '1rem' }}>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    style={{ padding: '0.5rem 1.25rem' }}
+                    disabled={creatingProfessor || !professorEmail.trim() || professorTempPassword.length < 8}
+                    onClick={async () => {
+                      setError(null)
+                      setCreatingProfessor(true)
+                      const res = await fetch('/api/admin/create-professor', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          email: professorEmail.trim(),
+                          tempPassword: professorTempPassword,
+                          firstName: professorFirstName.trim() || undefined,
+                          lastName: professorLastName.trim() || undefined,
+                        }),
+                      })
+                      const json = await res.json().catch(() => ({}))
+                      setCreatingProfessor(false)
+                      if (!res.ok) {
+                        setError(json.error || 'Failed to create professor')
+                        return
+                      }
+                      setProfessorEmail('')
+                      setProfessorTempPassword('')
+                      setProfessorFirstName('')
+                      setProfessorLastName('')
+                      fetchDashboardData()
+                    }}
+                  >
+                    {creatingProfessor ? 'Creating…' : 'Create professor'}
+                  </button>
+                </div>
               </section>
-            )}
               {allUsers.length > 0 && (
               <section>
                   <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>
@@ -391,6 +438,7 @@ export default function AdminDashboard() {
                           <th>Email</th>
                           <th>Name</th>
                           <th>Role</th>
+                          <th>Change role</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -409,6 +457,31 @@ export default function AdminDashboard() {
                               }}>
                                 {p.role}
                               </span>
+                            </td>
+                            <td>
+                              <select
+                                id={`role-${p.id}`}
+                                className="form-control"
+                                defaultValue={p.role ?? 'student'}
+                                style={{ width: 'auto', display: 'inline-block', marginRight: '0.5rem' }}
+                              >
+                                <option value="student">Student</option>
+                                <option value="professor">Professor</option>
+                                <option value="admin">Admin</option>
+                              </select>
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                style={{ padding: '0.35rem 0.75rem' }}
+                                disabled={assigning === p.id}
+                                onClick={() => {
+                                  const sel = document.getElementById(`role-${p.id}`) as HTMLSelectElement
+                                  const newRole = (sel?.value as 'student' | 'professor' | 'admin') || 'student'
+                                  if (newRole !== p.role) handleAssignRole(p.id, newRole)
+                                }}
+                              >
+                                {assigning === p.id ? 'Updating…' : 'Update'}
+                              </button>
                             </td>
                           </tr>
                         ))}

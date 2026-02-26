@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import AutonnomicLogo from '../../../student/components/AutonnomicLogo'
@@ -14,6 +14,12 @@ interface Course {
   credits: number
   semester: string | null
   academic_year: string | null
+}
+
+interface SidebarCourse {
+  id: string
+  code: string
+  name: string
 }
 
 interface Schedule {
@@ -76,6 +82,7 @@ const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Fri
 export default function ProfessorCourseDetail() {
   const router = useRouter()
   const params = useParams()
+  const pathname = usePathname()
   const courseId = params.courseId as string
   const [loading, setLoading] = useState(true)
   const [course, setCourse] = useState<Course | null>(null)
@@ -94,7 +101,7 @@ export default function ProfessorCourseDetail() {
   })
   const [userName, setUserName] = useState<string>('')
   const [userInitials, setUserInitials] = useState<string>('')
-  const [courses, setCourses] = useState<Course[]>([])
+  const [courses, setCourses] = useState<SidebarCourse[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null)
   const [showAssignmentForm, setShowAssignmentForm] = useState(false)
@@ -142,13 +149,17 @@ export default function ProfessorCourseDetail() {
 
       const { data: profile } = await supabase
         .from('user_profiles')
-        .select('first_name, last_name, role')
+        .select('first_name, last_name, role, must_reset_password')
         .eq('id', user.id)
         .single()
 
       // Verify user is a professor, redirect if not
       if (!profile || profile.role !== 'professor') {
         router.push('/dashboard')
+        return
+      }
+      if (profile.must_reset_password) {
+        router.replace('/reset-password')
         return
       }
 
@@ -835,11 +846,17 @@ export default function ProfessorCourseDetail() {
           </div>
         </div>
         <nav className="canvas-sidebar-nav">
-          <Link href="/dashboard/professor" className="canvas-nav-item">
+          <Link href="/dashboard/professor" className={`canvas-nav-item ${pathname === '/dashboard/professor' ? 'active' : ''}`}>
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
             <span className="nav-text">Dashboard</span>
+          </Link>
+          <Link href="/dashboard/professor/inbox" className={`canvas-nav-item ${pathname === '/dashboard/professor/inbox' ? 'active' : ''}`}>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <span className="nav-text">INBOX</span>
           </Link>
         </nav>
         <div className="canvas-courses-section">

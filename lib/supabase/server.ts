@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import type { User } from '@supabase/supabase-js'
 
 export async function createClient() {
   const cookieStore = await cookies()
@@ -23,4 +24,16 @@ export async function createClient() {
       },
     }
   )
+}
+
+/** Get current user from cookies or from Authorization: Bearer <token> (client stores session in localStorage). */
+export async function getAuthUser(request?: Request | null): Promise<User | null> {
+  const supabase = await createClient()
+  const token = request?.headers?.get('Authorization')?.replace(/^Bearer\s+/i, '').trim()
+  if (token) {
+    const { data: { user } } = await supabase.auth.getUser(token)
+    if (user) return user
+  }
+  const { data: { user } } = await supabase.auth.getUser()
+  return user ?? null
 }

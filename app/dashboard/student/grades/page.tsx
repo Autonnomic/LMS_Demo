@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '../components/Sidebar'
 import Notifications from '../components/Notifications'
+import { ChatProvider } from '../components/ChatContext'
 
 interface Grade {
   id: string
@@ -212,18 +213,21 @@ export default function GradesPage() {
 
   if (loading) {
     return (
-      <div className="canvas-layout">
-        <Sidebar courses={courses} />
-        <div className="canvas-main-content">
-          <div style={{ textAlign: 'center', padding: '4rem' }}>
-            <p>Loading grades...</p>
+      <ChatProvider>
+        <div className="canvas-layout">
+          <Sidebar courses={courses} />
+          <div className="canvas-main-content">
+            <div style={{ textAlign: 'center', padding: '4rem' }}>
+              <p>Loading grades...</p>
+            </div>
           </div>
         </div>
-      </div>
+      </ChatProvider>
     )
   }
 
   return (
+    <ChatProvider>
     <div className="canvas-layout">
       <Sidebar courses={courses} />
       
@@ -507,5 +511,6 @@ export default function GradesPage() {
         </div>
       </main>
     </div>
+    </ChatProvider>
   )
 }

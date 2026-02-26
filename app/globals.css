@@ -1311,11 +1311,63 @@ a:hover {
   box-shadow: 0 0 0 3px rgba(8, 146, 165, 0.1);
 }
 
+/* Mobile bottom nav (icons only) - hidden on desktop */
+.canvas-sidebar-mobile-bottom {
+  display: none;
+}
+
+.canvas-mobile-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: none;
+  transition: color 0.2s, background 0.2s;
+  border-radius: 8px;
+}
+
+.canvas-mobile-nav-item:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.canvas-mobile-nav-item.active {
+  color: white;
+  background: rgba(8, 146, 165, 0.3);
+}
+
+.canvas-mobile-nav-item svg {
+  width: 24px;
+  height: 24px;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .canvas-sidebar {
     transform: translateX(-100%);
     transition: transform 0.3s ease;
+  }
+
+  /* Hide left sidebar only when mobile bottom bar is present (student layout) */
+  .canvas-layout:has(.canvas-sidebar-mobile-bottom) .canvas-sidebar {
+    display: none;
+  }
+
+  .canvas-sidebar-mobile-bottom {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 56px;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    background: var(--navy-dark);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 100;
+    align-items: center;
+    justify-content: space-around;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
   }
 
   .canvas-sidebar.open {
@@ -1333,6 +1385,7 @@ a:hover {
 
   .canvas-main-content {
     margin-left: 0;
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 
   .canvas-sidebar.collapsed ~ .canvas-main-content {

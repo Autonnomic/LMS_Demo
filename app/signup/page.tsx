@@ -53,7 +53,7 @@ export default function SignupPage() {
         {error && <p className="auth-error">{error}</p>}
         {success && (
           <p className="auth-success">
-            Check your email to confirm your account, then log in.
+            Check your email to confirm your account. After confirming, you can log in and access your student dashboard immediately.
           </p>
         )}
         <form onSubmit={handleSubmit}>

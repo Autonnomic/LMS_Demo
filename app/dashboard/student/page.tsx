@@ -128,14 +128,16 @@ export default function StudentDashboard() {
 
   if (loading) {
     return (
-      <div className="canvas-layout">
-        <Sidebar courses={[]} />
-        <div className="canvas-main-content">
-          <div style={{ textAlign: 'center', padding: '4rem' }}>
-            <p>Loading dashboard...</p>
+      <ChatProvider>
+        <div className="canvas-layout">
+          <Sidebar courses={[]} />
+          <div className="canvas-main-content">
+            <div style={{ textAlign: 'center', padding: '4rem' }}>
+              <p>Loading dashboard...</p>
+            </div>
           </div>
         </div>
-      </div>
+      </ChatProvider>
     )
   }
 
@@ -151,7 +153,7 @@ export default function StudentDashboard() {
           <h1 className="canvas-topbar-title">Dashboard</h1>
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {userId && <Notifications userId={userId} />}
-            {userId && <Chat userId={userId} userRole={userRole} />}
+            {userId && <Chat userId={userId} userRole={userRole} hideTriggerButton />}
             <div className="canvas-user-menu" onClick={handleLogout}>
               <div className="canvas-user-avatar">{userInitials}</div>
               <div>

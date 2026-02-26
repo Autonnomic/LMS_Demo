@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '../../components/Sidebar'
 import Notifications from '../../components/Notifications'
+import { ChatProvider } from '../../components/ChatContext'
 
 interface Assignment {
   id: string
@@ -252,30 +253,34 @@ export default function AssignmentDetailPage() {
 
   if (loading) {
     return (
-      <div className="canvas-layout">
-        <Sidebar courses={courses} />
-        <div className="canvas-main-content">
-          <div style={{ textAlign: 'center', padding: '4rem' }}>
-            <p>Loading assignment...</p>
+      <ChatProvider>
+        <div className="canvas-layout">
+          <Sidebar courses={courses} />
+          <div className="canvas-main-content">
+            <div style={{ textAlign: 'center', padding: '4rem' }}>
+              <p>Loading assignment...</p>
+            </div>
           </div>
         </div>
-      </div>
+      </ChatProvider>
     )
   }
 
   if (!assignment) {
     return (
-      <div className="canvas-layout">
-        <Sidebar courses={courses} />
-        <div className="canvas-main-content">
-          <div style={{ textAlign: 'center', padding: '4rem' }}>
-            <p>Assignment not found</p>
-            <Link href="/dashboard/student/assignments" className="btn-primary" style={{ marginTop: '1rem', display: 'inline-block' }}>
-              Back to Assignments
-            </Link>
+      <ChatProvider>
+        <div className="canvas-layout">
+          <Sidebar courses={courses} />
+          <div className="canvas-main-content">
+            <div style={{ textAlign: 'center', padding: '4rem' }}>
+              <p>Assignment not found</p>
+              <Link href="/dashboard/student/assignments" className="btn-primary" style={{ marginTop: '1rem', display: 'inline-block' }}>
+                Back to Assignments
+              </Link>
+            </div>
           </div>
         </div>
-      </div>
+      </ChatProvider>
     )
   }
 
@@ -283,6 +288,7 @@ export default function AssignmentDetailPage() {
   const isPastDue = isOverdue()
 
   return (
+    <ChatProvider>
     <div className="canvas-layout">
       <Sidebar courses={courses} />
       
@@ -562,5 +568,6 @@ export default function AssignmentDetailPage() {
         </div>
       </main>
     </div>
+    </ChatProvider>
   )
 }

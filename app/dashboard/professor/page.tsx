@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Chat from '../student/components/Chat'
@@ -43,13 +43,17 @@ export default function ProfessorDashboard() {
       // Fetch user profile and verify role
       const { data: profile } = await supabase
         .from('user_profiles')
-        .select('first_name, last_name, role')
+        .select('first_name, last_name, role, must_reset_password')
         .eq('id', user.id)
         .single()
 
       // Verify user is a professor, redirect if not
       if (!profile || profile.role !== 'professor') {
         router.push('/dashboard')
+        return
+      }
+      if (profile.must_reset_password) {
+        router.replace('/reset-password')
         return
       }
 
@@ -110,6 +114,27 @@ export default function ProfessorDashboard() {
     router.refresh()
   }
 
+  // Generate course color based on course ID
+  function getCourseColor(courseId: string) {
+    // Base colors from the palette
+    const baseColors = [
+      { primary: '#0892A5', secondary: '#0CA4A5' }, // Teal bright to medium
+      { primary: '#06908F', secondary: '#0892A5' }, // Teal dark to bright
+      { primary: '#0CA4A5', secondary: '#06908F' }, // Teal medium to dark
+      { primary: '#0892A5', secondary: '#0CA4A5' }, // Teal bright to medium (variation)
+      { primary: '#06908F', secondary: '#0CA4A5' }, // Teal dark to medium
+      { primary: '#0CA4A5', secondary: '#0892A5' }, // Teal medium to bright
+    ]
+    
+    // Use course ID hash for consistent color assignment
+    const hash = courseId.split('').reduce((acc, char) => {
+      return ((acc << 5) - acc) + char.charCodeAt(0)
+    }, 0)
+    
+    const colorIndex = Math.abs(hash) % baseColors.length
+    return baseColors[colorIndex]
+  }
+
   if (loading) {
     return (
       <div className="canvas-layout">
@@ -124,20 +149,57 @@ export default function ProfessorDashboard() {
 
   return (
     <ChatProvider>
-      <div className="canvas-layout">
-        {/* Sidebar */}
-        <aside className="canvas-sidebar">
+      <ProfessorDashboardContent
+        courses={courses}
+        userName={userName}
+        userInitials={userInitials}
+        userId={userId}
+        userRole={userRole}
+        onLogout={handleLogout}
+        getCourseColor={getCourseColor}
+      />
+    </ChatProvider>
+  )
+}
+
+function ProfessorDashboardContent({
+  courses,
+  userName,
+  userInitials,
+  userId,
+  userRole,
+  onLogout,
+  getCourseColor,
+}: {
+  courses: Course[]
+  userName: string
+  userInitials: string
+  userId: string
+  userRole: 'student' | 'professor'
+  onLogout: () => void
+  getCourseColor: (courseId: string) => { primary: string; secondary: string }
+}) {
+  const pathname = usePathname()
+  return (
+    <div className="canvas-layout">
+      <aside className="canvas-sidebar">
         <div className="canvas-sidebar-header">
           <div className="sidebar-logo-container">
             <AutonnomicLogo />
           </div>
         </div>
         <nav className="canvas-sidebar-nav">
-          <Link href="/dashboard/professor" className="canvas-nav-item active">
+          <Link href="/dashboard/professor" className={`canvas-nav-item ${pathname === '/dashboard/professor' ? 'active' : ''}`}>
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
             </svg>
             <span className="nav-text">Dashboard</span>
+          </Link>
+          <Link href="/dashboard/professor/inbox" className={`canvas-nav-item ${pathname === '/dashboard/professor/inbox' ? 'active' : ''}`}>
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <span className="nav-text">INBOX</span>
           </Link>
         </nav>
         <div className="canvas-courses-section">
@@ -157,13 +219,12 @@ export default function ProfessorDashboard() {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="canvas-main-content">
         <div className="canvas-topbar">
           <h1 className="canvas-topbar-title">Professor Dashboard</h1>
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            {userId && <Chat userId={userId} userRole={userRole} />}
-            <div className="canvas-user-menu" onClick={handleLogout}>
+            {userId && <Chat userId={userId} userRole={userRole} hideTriggerButton />}
+            <div className="canvas-user-menu" onClick={onLogout}>
               <div className="canvas-user-avatar">{userInitials}</div>
               <div>
                 <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>
@@ -184,42 +245,50 @@ export default function ProfessorDashboard() {
             </h2>
             {courses.length > 0 ? (
               <div className="canvas-courses-grid">
-                {courses.map((course) => (
-                  <Link
-                    key={course.id}
-                    href={`/dashboard/professor/courses/${course.id}`}
-                    className="canvas-course-card"
-                  >
-                    <div className="canvas-course-card-header">
-                      <div className="canvas-course-card-code">{course.code}</div>
-                      <h3 className="canvas-course-card-title">{course.name}</h3>
-                    </div>
-                    <div className="canvas-course-card-body">
-                      <div className="canvas-course-card-info">
-                        <div className="canvas-course-card-info-item">
-                          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                          </svg>
-                          {course.credits} Credits
-                        </div>
-                        {course.semester && (
+                {courses.map((course) => {
+                  const colors = getCourseColor(course.id)
+                  return (
+                    <Link
+                      key={course.id}
+                      href={`/dashboard/professor/courses/${course.id}`}
+                      className="canvas-course-card"
+                    >
+                      <div
+                        className="canvas-course-card-header"
+                        style={{
+                          background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 100%)`,
+                        }}
+                      >
+                        <div className="canvas-course-card-code">{course.code}</div>
+                        <h3 className="canvas-course-card-title">{course.name}</h3>
+                      </div>
+                      <div className="canvas-course-card-body">
+                        <div className="canvas-course-card-info">
                           <div className="canvas-course-card-info-item">
                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                             </svg>
-                            {course.semester} {course.academic_year}
+                            {course.credits} Credits
                           </div>
-                        )}
-                        <div className="canvas-course-card-info-item">
-                          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                          </svg>
-                          {course.enrolled_students} Students
+                          {course.semester && (
+                            <div className="canvas-course-card-info-item">
+                              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              {course.semester} {course.academic_year}
+                            </div>
+                          )}
+                          <div className="canvas-course-card-info-item">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                            {course.enrolled_students} Students
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </Link>
-                ))}
+                    </Link>
+                  )
+                })}
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>
@@ -229,7 +298,6 @@ export default function ProfessorDashboard() {
           </div>
         </div>
       </main>
-      </div>
-    </ChatProvider>
+    </div>
   )
 }

@@ -48,6 +48,16 @@ interface CourseTopic {
   scheduled_date: string
 }
 
+interface CourseAssignment {
+  id: string
+  title: string
+  description: string | null
+  due_date: string
+  max_points: number
+  assignment_type: string | null
+  submission?: { id: string; status: string; grade: number | null } | null
+}
+
 function CourseDetailPageContent() {
   const router = useRouter()
   const params = useParams()
@@ -58,6 +68,7 @@ function CourseDetailPageContent() {
   const [schedule, setSchedule] = useState<Schedule[]>([])
   const [enrolledStudents, setEnrolledStudents] = useState<EnrolledStudent[]>([])
   const [upcomingTopics, setUpcomingTopics] = useState<CourseTopic[]>([])
+  const [courseAssignments, setCourseAssignments] = useState<CourseAssignment[]>([])
   const [allCourses, setAllCourses] = useState<Course[]>([])
   const [userName, setUserName] = useState<string>('')
   const [userInitials, setUserInitials] = useState<string>('')
@@ -215,6 +226,34 @@ function CourseDetailPageContent() {
       if (topicsData) {
         setUpcomingTopics(topicsData)
       }
+
+      // Fetch assignments for this course
+      const { data: assignmentsData } = await supabase
+        .from('assignments')
+        .select('id, title, description, due_date, max_points, assignment_type')
+        .eq('course_id', courseId)
+        .order('due_date', { ascending: true })
+
+      const { data: submissionsData } = await supabase
+        .from('assignment_submissions')
+        .select('assignment_id, id, status, grade')
+        .eq('student_id', user.id)
+
+      const submissionsMap = new Map(
+        (submissionsData || []).map((s: { assignment_id: string; id: string; status: string; grade: number | null }) => [
+          s.assignment_id,
+          { id: s.id, status: s.status, grade: s.grade }
+        ])
+      )
+
+      if (assignmentsData) {
+        setCourseAssignments(
+          assignmentsData.map((a: any) => ({
+            ...a,
+            submission: submissionsMap.get(a.id) || null
+          }))
+        )
+      }
     } catch (error) {
       console.error('Error fetching course data:', error)
     } finally {
@@ -248,6 +287,24 @@ function CourseDetailPageContent() {
     const first = firstName?.charAt(0) || ''
     const last = lastName?.charAt(0) || ''
     return (first + last).toUpperCase() || '?'
+  }
+
+  function getAssignmentStatus(a: CourseAssignment): 'pending' | 'submitted' | 'graded' | 'overdue' {
+    const now = new Date()
+    const dueDate = new Date(a.due_date)
+    if (a.submission && a.submission.grade != null) return 'graded'
+    if (a.submission) return 'submitted'
+    if (dueDate < now) return 'overdue'
+    return 'pending'
+  }
+
+  function getStatusLabel(status: string): string {
+    switch (status) {
+      case 'graded': return 'Graded'
+      case 'submitted': return 'Submitted'
+      case 'overdue': return 'Overdue'
+      default: return 'Pending'
+    }
   }
 
   // Generate course color based on course ID (same function as dashboard)
@@ -309,7 +366,7 @@ function CourseDetailPageContent() {
           <h1 className="canvas-topbar-title">{course.code} - {course.name}</h1>
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {currentUserId && <Notifications userId={currentUserId} />}
-            {currentUserId && <Chat userId={currentUserId} userRole={userRole} />}
+            {currentUserId && <Chat userId={currentUserId} userRole={userRole} hideTriggerButton />}
             <div className="canvas-user-menu" onClick={handleLogout}>
               <div className="canvas-user-avatar">{userInitials}</div>
               <div>
@@ -364,6 +421,78 @@ function CourseDetailPageContent() {
                   </div>
                 ) : (
                   <p style={{ color: 'var(--text-muted)' }}>No schedule available</p>
+                )}
+              </div>
+
+              {/* Assignments for this course */}
+              <div className="course-info-card">
+                <h3>Assignments</h3>
+                {courseAssignments.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {courseAssignments.map((assignment) => {
+                      const status = getAssignmentStatus(assignment)
+                      const statusColor =
+                        status === 'graded'
+                          ? '#10b981'
+                          : status === 'submitted'
+                            ? '#3b82f6'
+                            : status === 'overdue'
+                              ? '#ef4444'
+                              : '#f59e0b'
+                      return (
+                        <Link
+                          key={assignment.id}
+                          href={`/dashboard/student/assignments/${assignment.id}`}
+                          style={{
+                            display: 'block',
+                            padding: '0.75rem 1rem',
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: '8px',
+                            textDecoration: 'none',
+                            color: 'var(--text)',
+                            transition: 'border-color 0.2s, box-shadow 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--teal-bright)'
+                            e.currentTarget.style.boxShadow = '0 0 0 1px var(--teal-bright)'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = ''
+                            e.currentTarget.style.boxShadow = ''
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: '0.9375rem', marginBottom: '0.25rem' }}>
+                                {assignment.title}
+                              </div>
+                              {assignment.description && (
+                                <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {assignment.description}
+                                </p>
+                              )}
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.375rem' }}>
+                                Due {formatDate(assignment.due_date)} · {assignment.max_points} pts
+                              </div>
+                            </div>
+                            <span
+                              style={{
+                                fontSize: '0.75rem',
+                                fontWeight: 500,
+                                color: statusColor,
+                                flexShrink: 0
+                              }}
+                            >
+                              {getStatusLabel(status)}
+                            </span>
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p style={{ color: 'var(--text-muted)' }}>No assignments for this course</p>
                 )}
               </div>
 

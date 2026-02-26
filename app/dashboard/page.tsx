@@ -16,10 +16,21 @@ export default function DashboardRedirect() {
       }
       const { data: profile } = await supabase
         .from('user_profiles')
-        .select('role')
+        .select('role, must_reset_password')
         .eq('id', user.id)
         .single()
-      const role = profile?.role ?? 'student'
+      let role = profile?.role
+      if (!role) {
+        const { data: { session } } = await supabase.auth.getSession()
+        const headers: Record<string, string> = {}
+        if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+        await fetch('/api/self-assign-student', { method: 'POST', credentials: 'include', headers })
+        role = 'student'
+      }
+      if (role === 'professor' && profile?.must_reset_password) {
+        router.replace('/reset-password')
+        return
+      }
       router.replace(`/dashboard/${role}`)
     }
     redirectByRole()
