@@ -78,32 +78,45 @@ function CourseDetailPageContent() {
   const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
   useEffect(() => {
-    fetchCourseData()
-    fetchAllCourses()
+    let cancelled = false
+    async function loadInitial() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user || cancelled) {
+          if (!cancelled && !user) router.push('/')
+          return
+        }
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('first_name, last_name, role')
+          .eq('id', user.id)
+          .single()
+        if (profile) {
+          const firstName = profile.first_name || ''
+          const lastName = profile.last_name || ''
+          setUserName(`${firstName} ${lastName}`.trim() || 'Student')
+          setUserInitials(
+            (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || 'S'
+          )
+          setCurrentUserId(user.id)
+          setUserRole(profile.role as 'student' | 'professor')
+        }
+        await Promise.all([
+          fetchCourseData(user.id),
+          fetchAllCourses(user.id)
+        ])
+      } catch (error) {
+        console.error('Error loading course page:', error)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    loadInitial()
+    return () => { cancelled = true }
   }, [courseId])
 
-  async function fetchAllCourses() {
+  async function fetchAllCourses(studentId: string) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('first_name, last_name')
-        .eq('id', user.id)
-        .single()
-
-      if (profile) {
-        const firstName = profile.first_name || ''
-        const lastName = profile.last_name || ''
-        setUserName(`${firstName} ${lastName}`.trim() || 'Student')
-        setUserInitials(
-          (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || 'S'
-        )
-        setCurrentUserId(user.id)
-        setUserRole(profile.role as 'student' | 'professor')
-      }
-
       const { data: coursesData } = await supabase
         .from('course_registrations')
         .select(`
@@ -113,9 +126,8 @@ function CourseDetailPageContent() {
             name
           )
         `)
-        .eq('student_id', user.id)
+        .eq('student_id', studentId)
         .eq('status', 'enrolled')
-
       if (coursesData) {
         setAllCourses(coursesData.map((reg: any) => reg.course).filter(Boolean))
       }
@@ -124,58 +136,58 @@ function CourseDetailPageContent() {
     }
   }
 
-  async function fetchCourseData() {
+  async function fetchCourseData(studentId: string) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/')
-        return
-      }
-
-      // Fetch course details
-      const { data: courseData } = await supabase
-        .from('courses')
-        .select(`
-          id,
-          code,
-          name,
-          description,
-          credits,
-          semester,
-          academic_year,
-          professor:user_profiles (
+      const today = new Date().toISOString().split('T')[0]
+      const [courseRes, scheduleRes, topicsRes, assignmentsRes, studentsRes, submissionsRes] = await Promise.all([
+        supabase
+          .from('courses')
+          .select(`
             id,
-            first_name,
-            last_name,
-            email
-          )
-        `)
-        .eq('id', courseId)
-        .single()
-
-      if (courseData) {
-        setCourse(courseData)
-      }
-
-      // Fetch schedule
-      const { data: scheduleData } = await supabase
-        .from('course_schedules')
-        .select('*')
-        .eq('course_id', courseId)
-        .order('day_of_week', { ascending: true })
-        .order('start_time', { ascending: true })
-
-      if (scheduleData) {
-        setSchedule(scheduleData)
-      }
-
-      // Fetch enrolled students using the RPC function
-      const { data: studentsData, error: studentsError } = await supabase
-        .rpc('get_enrolled_students', { p_course_id: courseId })
-
-      if (studentsError) {
-        console.error('Error fetching enrolled students:', studentsError)
-        // Fallback: try direct query if RPC fails
+            code,
+            name,
+            description,
+            credits,
+            semester,
+            academic_year,
+            professor:user_profiles (
+              id,
+              first_name,
+              last_name,
+              email
+            )
+          `)
+          .eq('id', courseId)
+          .single(),
+        supabase
+          .from('course_schedules')
+          .select('*')
+          .eq('course_id', courseId)
+          .order('day_of_week', { ascending: true })
+          .order('start_time', { ascending: true }),
+        supabase
+          .from('course_topics')
+          .select('*')
+          .eq('course_id', courseId)
+          .gte('scheduled_date', today)
+          .order('scheduled_date', { ascending: true })
+          .limit(5),
+        supabase
+          .from('assignments')
+          .select('id, title, description, due_date, max_points, assignment_type')
+          .eq('course_id', courseId)
+          .order('due_date', { ascending: true }),
+        supabase.rpc('get_enrolled_students', { p_course_id: courseId }),
+        supabase
+          .from('assignment_submissions')
+          .select('assignment_id, id, status, grade')
+          .eq('student_id', studentId)
+      ])
+      if (courseRes.data) setCourse(courseRes.data)
+      if (scheduleRes.data) setSchedule(scheduleRes.data)
+      if (topicsRes.data) setUpcomingTopics(topicsRes.data)
+      if (studentsRes.error) {
+        console.error('Error fetching enrolled students:', studentsRes.error)
         const { data: fallbackData } = await supabase
           .from('course_registrations')
           .select(`
@@ -189,7 +201,6 @@ function CourseDetailPageContent() {
           `)
           .eq('course_id', courseId)
           .eq('status', 'enrolled')
-
         if (fallbackData) {
           setEnrolledStudents(
             fallbackData
@@ -202,9 +213,9 @@ function CourseDetailPageContent() {
               }))
           )
         }
-      } else if (studentsData) {
+      } else if (studentsRes.data) {
         setEnrolledStudents(
-          studentsData.map((s: any) => ({
+          studentsRes.data.map((s: any) => ({
             id: s.student_id,
             first_name: s.first_name,
             last_name: s.last_name,
@@ -212,43 +223,16 @@ function CourseDetailPageContent() {
           }))
         )
       }
-
-      // Fetch upcoming topics
-      const today = new Date()
-      const { data: topicsData } = await supabase
-        .from('course_topics')
-        .select('*')
-        .eq('course_id', courseId)
-        .gte('scheduled_date', today.toISOString().split('T')[0])
-        .order('scheduled_date', { ascending: true })
-        .limit(5)
-
-      if (topicsData) {
-        setUpcomingTopics(topicsData)
-      }
-
-      // Fetch assignments for this course
-      const { data: assignmentsData } = await supabase
-        .from('assignments')
-        .select('id, title, description, due_date, max_points, assignment_type')
-        .eq('course_id', courseId)
-        .order('due_date', { ascending: true })
-
-      const { data: submissionsData } = await supabase
-        .from('assignment_submissions')
-        .select('assignment_id, id, status, grade')
-        .eq('student_id', user.id)
-
+      const submissionsData = submissionsRes.data || []
       const submissionsMap = new Map(
-        (submissionsData || []).map((s: { assignment_id: string; id: string; status: string; grade: number | null }) => [
+        submissionsData.map((s: { assignment_id: string; id: string; status: string; grade: number | null }) => [
           s.assignment_id,
           { id: s.id, status: s.status, grade: s.grade }
         ])
       )
-
-      if (assignmentsData) {
+      if (assignmentsRes.data) {
         setCourseAssignments(
-          assignmentsData.map((a: any) => ({
+          assignmentsRes.data.map((a: any) => ({
             ...a,
             submission: submissionsMap.get(a.id) || null
           }))
@@ -256,8 +240,6 @@ function CourseDetailPageContent() {
       }
     } catch (error) {
       console.error('Error fetching course data:', error)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -363,7 +345,7 @@ function CourseDetailPageContent() {
       {/* Main Content */}
       <main className="canvas-main-content">
         <div className="canvas-topbar">
-          <h1 className="canvas-topbar-title">{course.code} - {course.name}</h1>
+          <h1 className="canvas-topbar-title course-topbar-title">{course.code} - {course.name}</h1>
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {currentUserId && <Notifications userId={currentUserId} />}
             {currentUserId && <Chat userId={currentUserId} userRole={userRole} hideTriggerButton />}

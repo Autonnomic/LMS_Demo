@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useParams, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import AutonnomicLogo from '../../../student/components/AutonnomicLogo'
+import Notifications from '../../../student/components/Notifications'
+import DocumentViewer from '../../../student/components/DocumentViewer'
 
 interface Course {
   id: string
@@ -101,15 +103,18 @@ export default function ProfessorCourseDetail() {
   })
   const [userName, setUserName] = useState<string>('')
   const [userInitials, setUserInitials] = useState<string>('')
+  const [currentUserId, setCurrentUserId] = useState<string>('')
   const [courses, setCourses] = useState<SidebarCourse[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null)
   const [showAssignmentForm, setShowAssignmentForm] = useState(false)
   const [viewingSubmissions, setViewingSubmissions] = useState<string | null>(null)
   const [submissions, setSubmissions] = useState<Submission[]>([])
+  const submissionsListRef = useRef<HTMLDivElement>(null)
   const [gradingSubmission, setGradingSubmission] = useState<string | null>(null)
   const [gradeValue, setGradeValue] = useState<number>(0)
   const [feedbackText, setFeedbackText] = useState<string>('')
+  const [viewingDocument, setViewingDocument] = useState<{ url: string; fileName: string } | null>(null)
   const [newAssignment, setNewAssignment] = useState({
     title: '',
     description: '',
@@ -128,9 +133,45 @@ export default function ProfessorCourseDetail() {
   ])
 
   useEffect(() => {
-    fetchCourseData()
-    fetchAllCourses()
-    fetchAssignments()
+    let cancelled = false
+    async function loadInitial() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user || cancelled) {
+          if (!cancelled && !user) router.push('/')
+          return
+        }
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('first_name, last_name, role, must_reset_password')
+          .eq('id', user.id)
+          .single()
+        if (!profile || profile.role !== 'professor' || cancelled) {
+          if (!cancelled) router.push('/dashboard')
+          return
+        }
+        if (profile.must_reset_password && !cancelled) {
+          router.replace('/reset-password')
+          return
+        }
+        const firstName = profile.first_name || ''
+        const lastName = profile.last_name || ''
+        setUserName(`${firstName} ${lastName}`.trim() || 'Professor')
+        setUserInitials((firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || 'P')
+        setCurrentUserId(user.id)
+        await Promise.all([
+          fetchCourseData(),
+          fetchAllCourses(user.id),
+          fetchAssignments()
+        ])
+      } catch (error) {
+        console.error('Error loading course page:', error)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    loadInitial()
+    return () => { cancelled = true }
   }, [courseId])
 
   useEffect(() => {
@@ -139,151 +180,80 @@ export default function ProfessorCourseDetail() {
     }
   }, [attendanceDate, courseId])
 
-  async function fetchAllCourses() {
+  // Defer loading all students until user opens Students tab
+  useEffect(() => {
+    if (activeTab === 'students') {
+      fetchAllStudents()
+    }
+  }, [activeTab, courseId])
+
+  async function fetchAllCourses(professorId: string) {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/')
-        return
-      }
-
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('first_name, last_name, role, must_reset_password')
-        .eq('id', user.id)
-        .single()
-
-      // Verify user is a professor, redirect if not
-      if (!profile || profile.role !== 'professor') {
-        router.push('/dashboard')
-        return
-      }
-      if (profile.must_reset_password) {
-        router.replace('/reset-password')
-        return
-      }
-
-      if (profile) {
-        const firstName = profile.first_name || ''
-        const lastName = profile.last_name || ''
-        setUserName(`${firstName} ${lastName}`.trim() || 'Professor')
-        setUserInitials(
-          (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || 'P'
-        )
-      }
-
       const { data: coursesData } = await supabase
         .from('courses')
         .select('id, code, name')
-        .eq('professor_id', user.id)
+        .eq('professor_id', professorId)
         .order('code', { ascending: true })
-
-      if (coursesData) {
-        setCourses(coursesData)
-      }
+      if (coursesData) setCourses(coursesData)
     } catch (error) {
       console.error('Error fetching courses:', error)
     }
   }
 
+  async function fetchAllStudents() {
+    try {
+      const { data: allStudentsData } = await supabase
+        .from('user_profiles')
+        .select('id, first_name, last_name, email')
+        .eq('role', 'student')
+        .order('last_name', { ascending: true })
+      if (allStudentsData) {
+        const enrolledIds = new Set(enrolledStudents.map((s) => s.id))
+        setAllStudents(allStudentsData.filter((s) => !enrolledIds.has(s.id)))
+      }
+    } catch (error) {
+      console.error('Error fetching all students:', error)
+    }
+  }
+
   async function fetchCourseData() {
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        router.push('/')
-        return
-      }
-
-      // Verify user is a professor
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-
-      if (!profile || profile.role !== 'professor') {
-        router.push('/dashboard')
-        return
-      }
-
-      // Fetch course details
-      const { data: courseData } = await supabase
-        .from('courses')
-        .select('*')
-        .eq('id', courseId)
-        .single()
-
-      if (courseData) {
-        setCourse(courseData)
-      }
-
-      // Fetch schedule
-      const { data: scheduleData } = await supabase
-        .from('course_schedules')
-        .select('*')
-        .eq('course_id', courseId)
-        .order('day_of_week', { ascending: true })
-        .order('start_time', { ascending: true })
-
-      if (scheduleData) {
-        setSchedule(scheduleData)
-      }
-
-      // Fetch enrolled students
-      const { data: studentsData } = await supabase
-        .from('course_registrations')
-        .select(`
-          id,
-          registered_at,
-          student:user_profiles (
+      const [courseRes, scheduleRes, studentsRes] = await Promise.all([
+        supabase.from('courses').select('*').eq('id', courseId).single(),
+        supabase
+          .from('course_schedules')
+          .select('*')
+          .eq('course_id', courseId)
+          .order('day_of_week', { ascending: true })
+          .order('start_time', { ascending: true }),
+        supabase
+          .from('course_registrations')
+          .select(`
             id,
-            first_name,
-            last_name,
-            email
-          )
-        `)
-        .eq('course_id', courseId)
-        .eq('status', 'enrolled')
-
-      if (studentsData) {
-        const enrolled = studentsData.map((reg: any) => ({
+            registered_at,
+            student:user_profiles (
+              id,
+              first_name,
+              last_name,
+              email
+            )
+          `)
+          .eq('course_id', courseId)
+          .eq('status', 'enrolled')
+      ])
+      if (courseRes.data) setCourse(courseRes.data)
+      if (scheduleRes.data) setSchedule(scheduleRes.data)
+      if (studentsRes.data) {
+        const enrolled = studentsRes.data.map((reg: any) => ({
           ...reg.student,
           registration_id: reg.id,
           registered_at: reg.registered_at
         }))
         setEnrolledStudents(enrolled)
-
-        // Fetch all students for enrollment (after we have enrolled list)
-        const { data: allStudentsData } = await supabase
-          .from('user_profiles')
-          .select('id, first_name, last_name, email')
-          .eq('role', 'student')
-          .order('last_name', { ascending: true })
-
-        if (allStudentsData) {
-          // Filter out already enrolled students
-          const enrolledIds = enrolled.map(s => s.id)
-          setAllStudents(allStudentsData.filter(s => !enrolledIds.includes(s.id)))
-        }
-      } else {
-        // If no enrolled students, fetch all students
-        const { data: allStudentsData } = await supabase
-          .from('user_profiles')
-          .select('id, first_name, last_name, email')
-          .eq('role', 'student')
-          .order('last_name', { ascending: true })
-
-        if (allStudentsData) {
-          setAllStudents(allStudentsData)
-        }
       }
-
-      // Fetch today's attendance
       await fetchAttendanceForDate(attendanceDate)
     } catch (error) {
       console.error('Error fetching course data:', error)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -294,24 +264,26 @@ export default function ProfessorCourseDetail() {
         .select('*')
         .eq('course_id', courseId)
         .order('due_date', { ascending: true })
-
-      if (assignmentsData) {
-        // Fetch submission counts separately
-        const assignmentsWithCounts = await Promise.all(
-          assignmentsData.map(async (assignment: any) => {
-            const { count } = await supabase
-              .from('assignment_submissions')
-              .select('*', { count: 'exact', head: true })
-              .eq('assignment_id', assignment.id)
-            
-            return {
-              ...assignment,
-              submission_count: count || 0
-            }
-          })
-        )
-        setAssignments(assignmentsWithCounts as Assignment[])
+      if (!assignmentsData?.length) {
+        if (assignmentsData) setAssignments(assignmentsData)
+        return
       }
+      const assignmentIds = assignmentsData.map((a: Assignment) => a.id)
+      const { data: submissionRows } = await supabase
+        .from('assignment_submissions')
+        .select('assignment_id')
+        .in('assignment_id', assignmentIds)
+      const countByAssignment: Record<string, number> = {}
+      assignmentIds.forEach((id) => (countByAssignment[id] = 0))
+      submissionRows?.forEach((r: { assignment_id: string }) => {
+        countByAssignment[r.assignment_id] = (countByAssignment[r.assignment_id] || 0) + 1
+      })
+      setAssignments(
+        assignmentsData.map((a: Assignment) => ({
+          ...a,
+          submission_count: countByAssignment[a.id] ?? 0
+        }))
+      )
     } catch (error) {
       console.error('Error fetching assignments:', error)
     }
@@ -523,6 +495,15 @@ export default function ProfessorCourseDetail() {
       alert('Failed to load submissions')
     }
   }
+
+  useEffect(() => {
+    if (viewingSubmissions && submissionsListRef.current) {
+      const el = submissionsListRef.current
+      requestAnimationFrame(() => {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    }
+  }, [viewingSubmissions])
 
   async function handleGradeSubmission(submissionId: string, assignment: Assignment) {
     try {
@@ -876,11 +857,31 @@ export default function ProfessorCourseDetail() {
         </div>
       </aside>
 
+      <nav className="canvas-sidebar-mobile-bottom" aria-label="Mobile navigation">
+        <Link href="/dashboard/professor" className={`canvas-mobile-nav-item ${pathname === '/dashboard/professor' ? 'active' : ''}`} aria-label="Dashboard">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+        </Link>
+        <Link href="/dashboard/professor/inbox" className={`canvas-mobile-nav-item ${pathname === '/dashboard/professor/inbox' ? 'active' : ''}`} aria-label="Inbox">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        </Link>
+        <Link href="/dashboard/professor" className="canvas-mobile-nav-item" aria-label="My Courses">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+          </svg>
+        </Link>
+      </nav>
+
       {/* Main Content */}
       <main className="canvas-main-content">
         <div className="canvas-topbar">
-          <h1 className="canvas-topbar-title">{course.code} - {course.name}</h1>
-          <div className="canvas-topbar-actions">
+          <img src="/logo.png" alt="" className="canvas-topbar-logo-right" />
+          <h1 className="canvas-topbar-title course-topbar-title">{course.code} - {course.name}</h1>
+          <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            {currentUserId && <Notifications userId={currentUserId} />}
             <div className="canvas-user-menu" onClick={handleLogout}>
               <div className="canvas-user-avatar">{userInitials}</div>
               <div>
@@ -1694,7 +1695,7 @@ export default function ProfessorCourseDetail() {
 
               {/* Submissions View */}
               {viewingSubmissions && (
-                <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                <div ref={submissionsListRef} style={{ marginTop: '2rem', padding: '1.5rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                     <h3>
                       Submissions for: {assignments.find(a => a.id === viewingSubmissions)?.title}
@@ -1766,27 +1767,53 @@ export default function ProfessorCourseDetail() {
                                 <div style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text)' }}>
                                   Submitted File:
                                 </div>
-                                <a
-                                  href={submission.file_url || '#'}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    padding: '0.5rem 1rem',
-                                    background: 'var(--teal-bright)',
-                                    color: 'white',
-                                    textDecoration: 'none',
-                                    borderRadius: '6px',
-                                    fontSize: '0.875rem'
-                                  }}
-                                >
-                                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                  </svg>
-                                  {submission.file_name}
-                                </a>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => submission.file_url && setViewingDocument({ url: submission.file_url, fileName: submission.file_name || 'document' })}
+                                    disabled={!submission.file_url}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.5rem',
+                                      padding: '0.5rem 1rem',
+                                      background: 'var(--teal-bright)',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '6px',
+                                      fontSize: '0.875rem',
+                                      cursor: submission.file_url ? 'pointer' : 'not-allowed'
+                                    }}
+                                  >
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                    </svg>
+                                    View
+                                  </button>
+                                  <a
+                                    href={submission.file_url || '#'}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.5rem',
+                                      padding: '0.5rem 1rem',
+                                      background: 'var(--bg)',
+                                      color: 'var(--text)',
+                                      textDecoration: 'none',
+                                      borderRadius: '6px',
+                                      fontSize: '0.875rem',
+                                      border: '1px solid var(--border)'
+                                    }}
+                                  >
+                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    {submission.file_name}
+                                  </a>
+                                </div>
                               </div>
                             )}
 
@@ -1875,6 +1902,14 @@ export default function ProfessorCourseDetail() {
           )}
         </div>
       </main>
+
+      {viewingDocument && (
+        <DocumentViewer
+          url={viewingDocument.url}
+          fileName={viewingDocument.fileName}
+          onClose={() => setViewingDocument(null)}
+        />
+      )}
     </div>
   )
 }

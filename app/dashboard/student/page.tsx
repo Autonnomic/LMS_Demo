@@ -150,7 +150,10 @@ export default function StudentDashboard() {
       {/* Main Content */}
       <main className="canvas-main-content">
         <div className="canvas-topbar">
-          <h1 className="canvas-topbar-title">Dashboard</h1>
+          <div className="canvas-topbar-brand">
+            <h1 className="canvas-topbar-title">Dashboard</h1>
+            <img src="/logo.png" alt="Dashboard" className="canvas-topbar-logo-mobile" />
+          </div>
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {userId && <Notifications userId={userId} />}
             {userId && <Chat userId={userId} userRole={userRole} hideTriggerButton />}

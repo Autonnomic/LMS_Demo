@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Chat from '../student/components/Chat'
+import Notifications from '../student/components/Notifications'
 import { ChatProvider } from '../student/components/ChatContext'
 import AutonnomicLogo from '../student/components/AutonnomicLogo'
 
@@ -83,23 +84,30 @@ export default function ProfessorDashboard() {
         .eq('professor_id', user.id)
         .order('code', { ascending: true })
 
-      if (coursesData) {
-        // Get enrollment count for each course
-        const coursesWithEnrollment = await Promise.all(
-          coursesData.map(async (course) => {
-            const { count } = await supabase
-              .from('course_registrations')
-              .select('*', { count: 'exact', head: true })
-              .eq('course_id', course.id)
-              .eq('status', 'enrolled')
-            
-            return {
-              ...course,
-              enrolled_students: count || 0
-            }
-          })
+      if (coursesData?.length) {
+        // Single query for all enrollment counts (avoids N+1)
+        const courseIds = coursesData.map((c) => c.id)
+        const { data: regs } = await supabase
+          .from('course_registrations')
+          .select('course_id')
+          .in('course_id', courseIds)
+          .eq('status', 'enrolled')
+        const countByCourse: Record<string, number> = {}
+        courseIds.forEach((id) => (countByCourse[id] = 0))
+        regs?.forEach((r) => { countByCourse[r.course_id] = (countByCourse[r.course_id] || 0) + 1 })
+        setCourses(
+          coursesData.map((course) => ({
+            ...course,
+            enrolled_students: countByCourse[course.id] ?? 0
+          }))
         )
-        setCourses(coursesWithEnrollment)
+      } else if (coursesData) {
+        setCourses(
+          coursesData.map((course) => ({
+            ...course,
+            enrolled_students: 0
+          }))
+        )
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
@@ -219,10 +227,29 @@ function ProfessorDashboardContent({
         </div>
       </aside>
 
+      <nav className="canvas-sidebar-mobile-bottom" aria-label="Mobile navigation">
+        <Link href="/dashboard/professor" className={`canvas-mobile-nav-item ${pathname === '/dashboard/professor' ? 'active' : ''}`} aria-label="Dashboard">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+        </Link>
+        <Link href="/dashboard/professor/inbox" className={`canvas-mobile-nav-item ${pathname === '/dashboard/professor/inbox' ? 'active' : ''}`} aria-label="Inbox">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        </Link>
+        <Link href="/dashboard/professor" className="canvas-mobile-nav-item" aria-label="My Courses">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+          </svg>
+        </Link>
+      </nav>
+
       <main className="canvas-main-content">
         <div className="canvas-topbar">
-          <h1 className="canvas-topbar-title">Professor Dashboard</h1>
+          <img src="/logo.png" alt="" className="canvas-topbar-logo-right" />
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            {userId && <Notifications userId={userId} />}
             {userId && <Chat userId={userId} userRole={userRole} hideTriggerButton />}
             <div className="canvas-user-menu" onClick={onLogout}>
               <div className="canvas-user-avatar">{userInitials}</div>

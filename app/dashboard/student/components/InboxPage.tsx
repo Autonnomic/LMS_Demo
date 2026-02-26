@@ -22,9 +22,10 @@ interface InboxPageProps {
   inboxHref: string
   backHref: string
   backLabel: string
+  showTopBarLogo?: boolean
 }
 
-export default function InboxPage({ userId, userRole, inboxHref, backHref, backLabel }: InboxPageProps) {
+export default function InboxPage({ userId, userRole, inboxHref, backHref, backLabel, showTopBarLogo }: InboxPageProps) {
   const searchParams = useSearchParams()
   const startWithUserId = searchParams.get('userId')
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -109,7 +110,7 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
       const formatted: Conversation[] = await Promise.all(
         data.map(async (conv: any) => {
           const otherUser = conv.participant1_id === userId ? conv.participant2 : conv.participant1
-          const { data: lastMsg } = await supabase.from('messages').select('content, sender_id, created_at, delivered_at, read_at, read').eq('conversation_id', conv.id).order('created_at', { ascending: false }).limit(1).single()
+          const { data: lastMsg } = await supabase.from('messages').select('content, sender_id, created_at, delivered_at, read_at, read').eq('conversation_id', conv.id).order('created_at', { ascending: false }).limit(1).maybeSingle()
           const { count } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('conversation_id', conv.id).eq('read', false).neq('sender_id', userId)
           return { id: conv.id, participant1_id: conv.participant1_id, participant2_id: conv.participant2_id, last_message_at: conv.last_message_at, encryption_salt: conv.encryption_salt, other_user: otherUser, last_message: lastMsg || null, unread_count: count || 0 }
         })
@@ -280,8 +281,8 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
         </Link>
         {showNewChat ? (
           <>
-            <button type="button" onClick={() => { setShowNewChat(false); setSearchQuery(''); setSearchResults([]) }} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', padding: '4px', display: 'flex' }}>
-              <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            <button type="button" onClick={() => { setShowNewChat(false); setSearchQuery(''); setSearchResults([]) }} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', padding: '4px', display: 'flex' }} aria-label="Close">
+              <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
             <span style={{ fontWeight: 600, fontSize: '1rem' }}>New chat</span>
           </>
@@ -292,6 +293,9 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
               New chat
             </button>
           </>
+        )}
+        {showTopBarLogo && (
+          <img src="/logo.png" alt="" style={{ height: 52, marginLeft: 'auto', objectFit: 'contain' }} />
         )}
       </div>
       {showNewChat ? (
@@ -317,7 +321,7 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
           ) : conversations.map((conv) => (
             <div key={conv.id} onClick={() => { setSelectedConversation(conv.id); setMobileShowChat(true) }} style={{ ...listItemStyle, background: conv.unread_count > 0 ? 'rgba(8, 146, 165, 0.06)' : 'var(--surface)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.background = conv.unread_count > 0 ? 'rgba(8, 146, 165, 0.06)' : 'var(--surface)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: conv.unread_count > 0 ? 600 : 500, color: 'var(--text)', fontSize: '0.9rem' }}>{conv.other_user.first_name} {conv.other_user.last_name}</div>
+                <div style={{ fontWeight: conv.unread_count > 0 ? 600 : 500, color: 'var(--text)', fontSize: '0.9rem' }}>{conv.other_user?.first_name} {conv.other_user?.last_name}</div>
                 {conv.last_message && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>{conv.last_message.sender_id === userId ? 'You: ' : ''}{isEncrypted(conv.last_message.content) ? '🔒 Encrypted message' : conv.last_message.content}</div>}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
@@ -346,7 +350,7 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
           <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text)' }}>{currentConversation?.other_user.first_name} {currentConversation?.other_user.last_name}</div>
+          <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text)' }}>{currentConversation?.other_user?.first_name} {currentConversation?.other_user?.last_name}</div>
         </div>
         {currentConversation?.encryption_salt && <span style={{ fontSize: '0.7rem', background: 'var(--surface-hover)', padding: '2px 8px', borderRadius: '8px' }} title="E2E">🔒</span>}
       </div>

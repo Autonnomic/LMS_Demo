@@ -51,10 +51,19 @@ a:hover {
 .auth-page {
   min-height: 100vh;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 2rem;
+  gap: 2rem;
   background: var(--bg);
+}
+
+.auth-page-logo {
+  display: block;
+  width: auto;
+  max-height: 112px;
+  object-fit: contain;
 }
 
 .auth-card {
@@ -267,7 +276,11 @@ a:hover {
 .canvas-layout {
   display: flex;
   min-height: 100vh;
+  min-width: 0;
+  width: 100%;
+  max-width: 100vw;
   background: var(--bg);
+  overflow-x: hidden;
 }
 
 .canvas-sidebar {
@@ -579,7 +592,11 @@ a:hover {
   flex: 1;
   margin-left: 260px;
   min-height: 100vh;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   transition: margin-left 0.3s ease;
+  overflow-x: hidden;
 }
 
 .canvas-sidebar.collapsed ~ .canvas-main-content {
@@ -597,6 +614,32 @@ a:hover {
   top: 0;
   z-index: 50;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  min-width: 0;
+  width: 100%;
+}
+
+.canvas-topbar-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.canvas-topbar-brand .canvas-topbar-title {
+  margin: 0;
+}
+
+.canvas-topbar-logo-mobile {
+  display: none;
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+}
+
+.canvas-topbar-logo-right {
+  height: 52px;
+  width: auto;
+  object-fit: contain;
+  margin-right: 0.75rem;
 }
 
 .canvas-topbar-title {
@@ -604,12 +647,18 @@ a:hover {
   font-weight: 600;
   color: var(--navy-dark);
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvas-topbar-actions {
   display: flex;
   align-items: center;
   gap: 1rem;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .canvas-user-menu {
@@ -643,6 +692,9 @@ a:hover {
   padding: 2rem;
   max-width: 1400px;
   margin: 0 auto;
+  min-width: 0;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 .canvas-courses-grid {
@@ -724,6 +776,8 @@ a:hover {
   padding: 2rem;
   border-radius: 12px;
   margin-bottom: 2rem;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .course-detail-header h1 {
@@ -731,6 +785,8 @@ a:hover {
   font-weight: 700;
   margin: 0 0 0.5rem 0;
   color: white;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .course-detail-header-meta {
@@ -745,6 +801,7 @@ a:hover {
   display: grid;
   grid-template-columns: 2fr 1fr;
   gap: 2rem;
+  min-width: 0;
 }
 
 .course-detail-main {
@@ -764,6 +821,8 @@ a:hover {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.5rem;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .course-info-card h3 {
@@ -1181,9 +1240,23 @@ a:hover {
   gap: 0.5rem;
   border-bottom: 2px solid var(--border);
   margin-bottom: 2rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.professor-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+
+.professor-tabs::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
 }
 
 .professor-tab {
+  flex-shrink: 0;
   padding: 0.75rem 1.5rem;
   background: transparent;
   border: none;
@@ -1194,6 +1267,7 @@ a:hover {
   cursor: pointer;
   transition: all 0.2s;
   font-family: inherit;
+  white-space: nowrap;
 }
 
 .professor-tab:hover {
@@ -1255,13 +1329,16 @@ a:hover {
 .table-container {
   background: white;
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: visible;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   margin-bottom: 1.5rem;
+  -webkit-overflow-scrolling: touch;
 }
 
 .table {
   width: 100%;
+  min-width: 600px;
   border-collapse: collapse;
 }
 
@@ -1349,9 +1426,14 @@ a:hover {
     transition: transform 0.3s ease;
   }
 
-  /* Hide left sidebar only when mobile bottom bar is present (student layout) */
+  /* Hide left sidebar only when mobile bottom bar is present (student + professor) */
   .canvas-layout:has(.canvas-sidebar-mobile-bottom) .canvas-sidebar {
     display: none;
+  }
+
+  /* Ensure main content has bottom padding above the bar (overrides inline padding e.g. inbox) */
+  .canvas-layout:has(.canvas-sidebar-mobile-bottom) .canvas-main-content {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px)) !important;
   }
 
   .canvas-sidebar-mobile-bottom {
@@ -1386,6 +1468,7 @@ a:hover {
   .canvas-main-content {
     margin-left: 0;
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    width: 100%;
   }
 
   .canvas-sidebar.collapsed ~ .canvas-main-content {
@@ -1401,14 +1484,181 @@ a:hover {
   }
 
   .canvas-topbar {
-    padding: 1rem;
+    padding: 1rem 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .canvas-topbar-brand .canvas-topbar-title {
+    display: none !important;
+  }
+
+  .canvas-topbar-logo-mobile {
+    display: block !important;
+  }
+
+  .canvas-topbar-actions {
+    gap: 0.5rem;
+    min-width: 0;
+    flex-shrink: 1;
+  }
+
+  .canvas-user-menu div:last-child {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .canvas-content-area {
     padding: 1rem;
+    max-width: 100%;
+  }
+
+  .schedule-item,
+  .course-detail-main {
+    min-width: 0;
+  }
+
+  /* Professor & student course detail: tighten header spacing on mobile */
+  .course-topbar-title {
+    display: none;
+  }
+
+  .course-detail-header {
+    padding: 1.25rem 1rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .course-detail-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .course-detail-header-meta {
+    flex-direction: column;
+    gap: 0.5rem;
   }
 
   .sidebar-toggle {
     display: none;
   }
+}
+
+/* In-app document viewer (assignments) */
+.document-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.document-viewer-modal {
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-width: 95vw;
+  max-height: 95vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.document-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.document-viewer-title {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.document-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.document-viewer-download {
+  font-size: 0.875rem;
+  color: var(--teal-bright);
+  text-decoration: none;
+}
+
+.document-viewer-download:hover {
+  text-decoration: underline;
+}
+
+.document-viewer-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.document-viewer-close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.document-viewer-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.document-viewer-iframe {
+  width: 100%;
+  min-width: 320px;
+  min-height: 480px;
+  height: 75vh;
+  border: none;
+  border-radius: 8px;
+  background: #f1f5f9;
+}
+
+.document-viewer-image {
+  max-width: 100%;
+  max-height: 75vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.document-viewer-fallback {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-muted);
+}
+
+.document-viewer-download-link {
+  display: inline-block;
+  margin-top: 1rem;
+  color: var(--teal-bright);
+  font-weight: 500;
+}
+
+.document-viewer-download-link:hover {
+  text-decoration: underline;
 }

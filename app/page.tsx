@@ -57,6 +57,7 @@ export default function LoginPage() {
 
   return (
     <main className="auth-page">
+      <img src="/logo.png" alt="Logo" className="auth-page-logo" />
       <div className="auth-card">
         <h1>Log in</h1>
         <p className="subtitle">Welcome back. Sign in to your account.</p>

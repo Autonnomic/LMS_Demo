@@ -102,7 +102,7 @@ export default function SignupPage() {
           </button>
         </form>
         <p className="auth-footer">
-          Already have an account? <Link href="/login">Log in</Link>
+          Already have an account? <Link href="/">Log in</Link>
         </p>
       </div>
     </main>

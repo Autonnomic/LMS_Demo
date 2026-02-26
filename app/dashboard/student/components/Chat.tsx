@@ -229,7 +229,7 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
             .eq('conversation_id', conv.id)
             .order('created_at', { ascending: false })
             .limit(1)
-            .single()
+            .maybeSingle()
           const { count } = await supabase
             .from('messages')
             .select('*', { count: 'exact', head: true })
@@ -690,7 +690,7 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
                               fontSize: '0.9rem',
                             }}
                           >
-                            {conv.other_user.first_name} {conv.other_user.last_name}
+                            {conv.other_user?.first_name} {conv.other_user?.last_name}
                           </div>
                           {conv.last_message && (
                             <div
@@ -762,7 +762,7 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
                   </button>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>
-                      {currentConversation?.other_user.first_name} {currentConversation?.other_user.last_name}
+                      {currentConversation?.other_user?.first_name} {currentConversation?.other_user?.last_name}
                     </div>
                   </div>
                   {currentConversation?.encryption_salt && (

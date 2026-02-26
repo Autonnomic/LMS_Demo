@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import Sidebar from '../../components/Sidebar'
 import Notifications from '../../components/Notifications'
 import { ChatProvider } from '../../components/ChatContext'
+import DocumentViewer from '../../components/DocumentViewer'
 
 interface Assignment {
   id: string
@@ -51,6 +52,7 @@ export default function AssignmentDetailPage() {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [viewingDocument, setViewingDocument] = useState<{ url: string; fileName: string } | null>(null)
 
   useEffect(() => {
     fetchAssignmentData()
@@ -524,12 +526,28 @@ export default function AssignmentDetailPage() {
                     <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
                       Submitted File
                     </div>
-                    <div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => submission.file_url && setViewingDocument({ url: submission.file_url, fileName: submission.file_name || 'document' })}
+                        disabled={!submission.file_url}
+                        style={{
+                          padding: '0.375rem 0.75rem',
+                          background: 'var(--teal-bright)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '0.875rem',
+                          cursor: submission.file_url ? 'pointer' : 'not-allowed'
+                        }}
+                      >
+                        View
+                      </button>
                       <a 
                         href={submission.file_url || '#'} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        style={{ color: 'var(--teal-bright)', textDecoration: 'none' }}
+                        style={{ color: 'var(--teal-bright)', textDecoration: 'none', fontSize: '0.875rem' }}
                       >
                         {submission.file_name} ↗
                       </a>
@@ -567,6 +585,14 @@ export default function AssignmentDetailPage() {
           )}
         </div>
       </main>
+
+      {viewingDocument && (
+        <DocumentViewer
+          url={viewingDocument.url}
+          fileName={viewingDocument.fileName}
+          onClose={() => setViewingDocument(null)}
+        />
+      )}
     </div>
     </ChatProvider>
   )
