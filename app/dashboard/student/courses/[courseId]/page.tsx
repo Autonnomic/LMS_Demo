@@ -289,34 +289,63 @@ function CourseDetailPageContent() {
     }
   }
 
-  // Generate course color based on course ID (same function as dashboard)
+  // Generate course color based on course ID (shared palette with calendar)
   function getCourseColor(courseId: string) {
-    const baseColors = [
-      { primary: '#0892A5', secondary: '#0CA4A5' },
-      { primary: '#06908F', secondary: '#0892A5' },
-      { primary: '#0CA4A5', secondary: '#06908F' },
-      { primary: '#0892A5', secondary: '#0CA4A5' },
-      { primary: '#06908F', secondary: '#0CA4A5' },
-      { primary: '#0CA4A5', secondary: '#0892A5' },
+    const palette = [
+      '#0892A5', // teal
+      '#2563EB', // blue
+      '#10B981', // green
+      '#F97316', // orange
+      '#EC4899', // pink
+      '#8B5CF6', // purple
+      '#F59E0B', // amber
+      '#EF4444', // red
     ]
-    
     const hash = courseId.split('').reduce((acc, char) => {
       return ((acc << 5) - acc) + char.charCodeAt(0)
     }, 0)
-    
-    const colorIndex = Math.abs(hash) % baseColors.length
-    return baseColors[colorIndex]
+    const colorIndex = Math.abs(hash) % palette.length
+    const primary = palette[colorIndex]
+    const secondary = palette[(colorIndex + 1) % palette.length]
+    return { primary, secondary }
   }
 
   if (loading) {
     return (
       <div className="canvas-layout">
         <Sidebar courses={[]} />
-        <div className="canvas-main-content">
-          <div style={{ textAlign: 'center', padding: '4rem' }}>
-            <p>Loading course...</p>
+        <main className="canvas-main-content">
+          <div className="canvas-topbar">
+            <h1 className="canvas-topbar-title course-topbar-title">
+              <span className="skeleton skeleton-text lg" style={{ width: '60%' }} />
+            </h1>
+            <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div className="skeleton skeleton-avatar" />
+              <div className="canvas-user-menu">
+                <div className="canvas-user-avatar skeleton" />
+                <div>
+                  <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
+                  <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+
+          <div className="canvas-content-area">
+            <div className="skeleton-card skeleton" style={{ marginBottom: '1.5rem' }}>
+              <div className="skeleton skeleton-text sm" style={{ width: '30%', marginBottom: '0.5rem' }} />
+              <div className="skeleton skeleton-text lg" style={{ width: '70%', marginBottom: '0.75rem' }} />
+              <div className="skeleton skeleton-text sm" style={{ width: '80%', marginBottom: '0.5rem' }} />
+              <div className="skeleton skeleton-text sm" style={{ width: '60%' }} />
+            </div>
+            <div className="skeleton-card skeleton">
+              <div className="skeleton skeleton-text sm" style={{ width: '40%', marginBottom: '0.75rem' }} />
+              <div className="skeleton skeleton-text sm" style={{ width: '90%', marginBottom: '0.5rem' }} />
+              <div className="skeleton skeleton-text sm" style={{ width: '85%', marginBottom: '0.5rem' }} />
+              <div className="skeleton skeleton-text sm" style={{ width: '75%' }} />
+            </div>
+          </div>
+        </main>
       </div>
     )
   }

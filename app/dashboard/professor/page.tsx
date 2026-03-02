@@ -122,36 +122,80 @@ export default function ProfessorDashboard() {
     router.refresh()
   }
 
-  // Generate course color based on course ID
-  function getCourseColor(courseId: string) {
-    // Base colors from the palette
-    const baseColors = [
-      { primary: '#0892A5', secondary: '#0CA4A5' }, // Teal bright to medium
-      { primary: '#06908F', secondary: '#0892A5' }, // Teal dark to bright
-      { primary: '#0CA4A5', secondary: '#06908F' }, // Teal medium to dark
-      { primary: '#0892A5', secondary: '#0CA4A5' }, // Teal bright to medium (variation)
-      { primary: '#06908F', secondary: '#0CA4A5' }, // Teal dark to medium
-      { primary: '#0CA4A5', secondary: '#0892A5' }, // Teal medium to bright
+  // Generate course color by index (no repeats within the grid, shared palette with calendar)
+  function getCourseColorByIndex(index: number) {
+    const palette = [
+      '#0892A5', // teal
+      '#2563EB', // blue
+      '#10B981', // green
+      '#F97316', // orange
+      '#EC4899', // pink
+      '#8B5CF6', // purple
+      '#F59E0B', // amber
+      '#EF4444', // red
     ]
-    
-    // Use course ID hash for consistent color assignment
-    const hash = courseId.split('').reduce((acc, char) => {
-      return ((acc << 5) - acc) + char.charCodeAt(0)
-    }, 0)
-    
-    const colorIndex = Math.abs(hash) % baseColors.length
-    return baseColors[colorIndex]
+    const colorIndex = index % palette.length
+    const primary = palette[colorIndex]
+    const secondary = palette[(colorIndex + 1) % palette.length]
+    return { primary, secondary }
   }
 
   if (loading) {
     return (
-      <div className="canvas-layout">
-        <div className="canvas-main-content">
-          <div style={{ textAlign: 'center', padding: '4rem' }}>
-            <p>Loading dashboard...</p>
-          </div>
+      <ChatProvider>
+        <div className="canvas-layout">
+          <aside className="canvas-sidebar">
+            <div className="canvas-sidebar-header">
+              <div className="sidebar-logo-container">
+                <div className="skeleton skeleton-avatar" />
+              </div>
+            </div>
+            <nav className="canvas-sidebar-nav">
+              <div className="canvas-nav-item">
+                <div className="skeleton skeleton-avatar" />
+                <span className="nav-text skeleton skeleton-text" style={{ width: '60%' }} />
+              </div>
+              <div className="canvas-nav-item">
+                <div className="skeleton skeleton-avatar" />
+                <span className="nav-text skeleton skeleton-text" style={{ width: '70%' }} />
+              </div>
+            </nav>
+          </aside>
+
+          <main className="canvas-main-content">
+            <div className="canvas-topbar">
+              <img src="/logo.png" alt="" className="canvas-topbar-logo-right" />
+              <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div className="skeleton skeleton-avatar" />
+                <div className="skeleton skeleton-avatar" />
+                <div className="canvas-user-menu">
+                  <div className="canvas-user-avatar skeleton" />
+                  <div>
+                    <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
+                    <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="canvas-content-area">
+              <div className="skeleton-text lg skeleton" style={{ width: '160px', marginBottom: '1.5rem' }} />
+              <div className="canvas-courses-grid">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="skeleton-card skeleton">
+                    <div style={{ marginBottom: '1rem' }}>
+                      <div className="skeleton-text sm skeleton" style={{ width: '40%', marginBottom: '0.5rem' }} />
+                      <div className="skeleton-text lg skeleton" style={{ width: '70%' }} />
+                    </div>
+                    <div className="skeleton-text sm skeleton" style={{ width: '50%', marginBottom: '0.5rem' }} />
+                    <div className="skeleton-text sm skeleton" style={{ width: '30%' }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </main>
         </div>
-      </div>
+      </ChatProvider>
     )
   }
 
@@ -164,7 +208,7 @@ export default function ProfessorDashboard() {
         userId={userId}
         userRole={userRole}
         onLogout={handleLogout}
-        getCourseColor={getCourseColor}
+        getCourseColor={getCourseColorByIndex}
       />
     </ChatProvider>
   )
@@ -185,7 +229,7 @@ function ProfessorDashboardContent({
   userId: string
   userRole: 'student' | 'professor'
   onLogout: () => void
-  getCourseColor: (courseId: string) => { primary: string; secondary: string }
+  getCourseColor: (index: number) => { primary: string; secondary: string }
 }) {
   const pathname = usePathname()
   return (
@@ -272,8 +316,8 @@ function ProfessorDashboardContent({
             </h2>
             {courses.length > 0 ? (
               <div className="canvas-courses-grid">
-                {courses.map((course) => {
-                  const colors = getCourseColor(course.id)
+                {courses.map((course, index) => {
+                  const colors = getCourseColor(index)
                   return (
                     <Link
                       key={course.id}
@@ -283,7 +327,7 @@ function ProfessorDashboardContent({
                       <div
                         className="canvas-course-card-header"
                         style={{
-                          background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 100%)`,
+                          backgroundColor: colors.primary,
                         }}
                       >
                         <div className="canvas-course-card-code">{course.code}</div>

@@ -316,7 +316,22 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
         </>
       ) : (
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {loading ? <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>Loading...</div> : conversations.length === 0 ? (
+          {loading ? (
+            <div style={{ padding: '0.75rem 0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} style={{ ...listItemStyle, background: 'var(--surface)' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="skeleton skeleton-text sm" style={{ width: '70%', marginBottom: '0.35rem' }} />
+                    <div className="skeleton skeleton-text sm" style={{ width: '90%' }} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                    <span className="skeleton skeleton-badge" style={{ width: '24px' }} />
+                    <span className="skeleton skeleton-text sm" style={{ width: '32px' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : conversations.length === 0 ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}><p>No conversations yet</p><p style={{ marginTop: '8px' }}>Tap &quot;New chat&quot; to search and start a conversation</p></div>
           ) : conversations.map((conv) => (
             <div key={conv.id} onClick={() => { setSelectedConversation(conv.id); setMobileShowChat(true) }} style={{ ...listItemStyle, background: conv.unread_count > 0 ? 'rgba(8, 146, 165, 0.06)' : 'var(--surface)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.background = conv.unread_count > 0 ? 'rgba(8, 146, 165, 0.06)' : 'var(--surface)' }}>

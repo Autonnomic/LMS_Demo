@@ -40,6 +40,14 @@ export default function Sidebar({ courses }: SidebarProps) {
     return pathname.startsWith('/dashboard/student/assignments')
   }
 
+  const isStudyPlansActive = () => {
+    return pathname.startsWith('/dashboard/student/study-plans')
+  }
+
+  const isCalendarActive = () => {
+    return pathname === '/dashboard/student/calendar'
+  }
+
   return (
     <>
     <aside className={`canvas-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
@@ -80,7 +88,7 @@ export default function Sidebar({ courses }: SidebarProps) {
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
-          <span className="nav-text">INBOX</span>
+          <span className="nav-text">Inbox</span>
         </Link>
         
         <Link 
@@ -102,10 +110,25 @@ export default function Sidebar({ courses }: SidebarProps) {
           </svg>
           <span className="nav-text">Grades</span>
         </Link>
+
+        <Link 
+          href="/dashboard/student/study-plans" 
+          className={`canvas-nav-item ${isStudyPlansActive() ? 'active' : ''}`}
+        >
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M8 5h11M8 9h8M8 13h6M5 5v14a1 1 0 001 1h10.5a1.5 1.5 0 001.5-1.5V5a2 2 0 00-2-2H7a2 2 0 00-2 2z"
+            />
+          </svg>
+          <span className="nav-text">Study Plans</span>
+        </Link>
         
         <Link 
-          href="/dashboard/student" 
-          className="canvas-nav-item"
+          href="/dashboard/student/calendar" 
+          className={`canvas-nav-item ${isCalendarActive() ? 'active' : ''}`}
         >
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -175,7 +198,12 @@ export default function Sidebar({ courses }: SidebarProps) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
         </svg>
       </Link>
-      <Link href="/dashboard/student" className="canvas-mobile-nav-item" aria-label="Calendar">
+      <Link href="/dashboard/student/study-plans" className={`canvas-mobile-nav-item ${isStudyPlansActive() ? 'active' : ''}`} aria-label="Study plans">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5h11M8 9h8M8 13h6M5 5v14a1 1 0 001 1h10.5a1.5 1.5 0 001.5-1.5V5a2 2 0 00-2-2H7a2 2 0 00-2 2z" />
+        </svg>
+      </Link>
+      <Link href="/dashboard/student/calendar" className={`canvas-mobile-nav-item ${isCalendarActive() ? 'active' : ''}`} aria-label="Calendar">
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>

@@ -1662,3 +1662,66 @@ a:hover {
 .document-viewer-download-link:hover {
   text-decoration: underline;
 }
+
+/* Skeleton loading states */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--surface-hover);
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -150px;
+  height: 100%;
+  width: 150px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+  animation: skeleton-shimmer 1.3s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton-text {
+  display: block;
+  height: 0.9rem;
+  border-radius: 999px;
+  background-color: var(--surface-hover);
+}
+
+.skeleton-text.sm {
+  height: 0.75rem;
+}
+
+.skeleton-text.lg {
+  height: 1.1rem;
+}
+
+.skeleton-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background-color: var(--surface-hover);
+}
+
+.skeleton-card {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 1.25rem;
+}
+
+.skeleton-badge {
+  display: inline-block;
+  height: 0.75rem;
+  border-radius: 999px;
+  background-color: var(--surface-hover);
+}

@@ -105,25 +105,22 @@ export default function StudentDashboard() {
     router.refresh()
   }
 
-  // Generate course color based on course ID
-  function getCourseColor(courseId: string, index: number) {
-    // Base colors from the palette
-    const baseColors = [
-      { primary: '#0892A5', secondary: '#0CA4A5' }, // Teal bright to medium
-      { primary: '#06908F', secondary: '#0892A5' }, // Teal dark to bright
-      { primary: '#0CA4A5', secondary: '#06908F' }, // Teal medium to dark
-      { primary: '#0892A5', secondary: '#0CA4A5' }, // Teal bright to medium (variation)
-      { primary: '#06908F', secondary: '#0CA4A5' }, // Teal dark to medium
-      { primary: '#0CA4A5', secondary: '#0892A5' }, // Teal medium to bright
+  // Generate course color by index (no repeats within the grid, shared palette with calendar)
+  function getCourseColorByIndex(index: number) {
+    const palette = [
+      '#0892A5', // teal
+      '#2563EB', // blue
+      '#10B981', // green
+      '#F97316', // orange
+      '#EC4899', // pink
+      '#8B5CF6', // purple
+      '#F59E0B', // amber
+      '#EF4444', // red
     ]
-    
-    // Use course ID hash for consistent color assignment
-    const hash = courseId.split('').reduce((acc, char) => {
-      return ((acc << 5) - acc) + char.charCodeAt(0)
-    }, 0)
-    
-    const colorIndex = Math.abs(hash) % baseColors.length
-    return baseColors[colorIndex]
+    const colorIndex = index % palette.length
+    const primary = palette[colorIndex]
+    const secondary = palette[(colorIndex + 1) % palette.length]
+    return { primary, secondary }
   }
 
   if (loading) {
@@ -131,11 +128,40 @@ export default function StudentDashboard() {
       <ChatProvider>
         <div className="canvas-layout">
           <Sidebar courses={[]} />
-          <div className="canvas-main-content">
-            <div style={{ textAlign: 'center', padding: '4rem' }}>
-              <p>Loading dashboard...</p>
+          <main className="canvas-main-content">
+            <div className="canvas-topbar">
+              <div className="canvas-topbar-brand">
+                <span className="skeleton skeleton-text lg" style={{ width: '120px' }} />
+              </div>
+              <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div className="skeleton skeleton-avatar" />
+                <div className="skeleton skeleton-avatar" />
+                <div className="canvas-user-menu">
+                  <div className="canvas-user-avatar skeleton" />
+                  <div>
+                    <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
+                    <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+
+            <div className="canvas-content-area">
+              <div className="skeleton skeleton-text lg" style={{ width: '160px', marginBottom: '1.5rem' }} />
+              <div className="canvas-courses-grid">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="skeleton-card skeleton">
+                    <div style={{ marginBottom: '1rem' }}>
+                      <div className="skeleton skeleton-text sm" style={{ width: '40%', marginBottom: '0.5rem' }} />
+                      <div className="skeleton skeleton-text lg" style={{ width: '70%' }} />
+                    </div>
+                    <div className="skeleton skeleton-text sm" style={{ width: '50%', marginBottom: '0.5rem' }} />
+                    <div className="skeleton skeleton-text sm" style={{ width: '30%' }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </main>
         </div>
       </ChatProvider>
     )
@@ -179,7 +205,7 @@ export default function StudentDashboard() {
             {courses.length > 0 ? (
               <div className="canvas-courses-grid">
                 {courses.map((course, index) => {
-                  const courseColor = getCourseColor(course.id, index)
+                  const courseColor = getCourseColorByIndex(index)
                   return (
                     <Link
                       key={course.id}
@@ -189,7 +215,7 @@ export default function StudentDashboard() {
                       <div 
                         className="canvas-course-card-header"
                         style={{
-                          background: `linear-gradient(135deg, ${courseColor.primary} 0%, ${courseColor.secondary} 100%)`
+                          backgroundColor: courseColor.primary
                         }}
                       >
                         <div className="canvas-course-card-code">{course.code}</div>

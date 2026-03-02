@@ -258,11 +258,38 @@ export default function AssignmentDetailPage() {
       <ChatProvider>
         <div className="canvas-layout">
           <Sidebar courses={courses} />
-          <div className="canvas-main-content">
-            <div style={{ textAlign: 'center', padding: '4rem' }}>
-              <p>Loading assignment...</p>
+          <main className="canvas-main-content">
+            <div className="canvas-topbar">
+              <h1 className="canvas-topbar-title">
+                <span className="skeleton skeleton-text lg" style={{ width: '60%' }} />
+              </h1>
+              <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div className="skeleton skeleton-avatar" />
+                <div className="canvas-user-menu">
+                  <div className="canvas-user-avatar skeleton" />
+                  <div>
+                    <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
+                    <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+
+            <div className="canvas-content-area">
+              <div className="skeleton-card skeleton" style={{ marginBottom: '1.5rem' }}>
+                <div className="skeleton skeleton-text sm" style={{ width: '30%', marginBottom: '0.5rem' }} />
+                <div className="skeleton skeleton-text lg" style={{ width: '70%', marginBottom: '0.75rem' }} />
+                <div className="skeleton skeleton-text sm" style={{ width: '80%', marginBottom: '0.5rem' }} />
+                <div className="skeleton skeleton-text sm" style={{ width: '60%' }} />
+              </div>
+              <div className="skeleton-card skeleton">
+                <div className="skeleton skeleton-text sm" style={{ width: '40%', marginBottom: '0.75rem' }} />
+                <div className="skeleton skeleton-text sm" style={{ width: '90%', marginBottom: '0.5rem' }} />
+                <div className="skeleton skeleton-text sm" style={{ width: '85%', marginBottom: '0.5rem' }} />
+                <div className="skeleton skeleton-text sm" style={{ width: '75%' }} />
+              </div>
+            </div>
+          </main>
         </div>
       </ChatProvider>
     )

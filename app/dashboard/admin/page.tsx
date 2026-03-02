@@ -47,7 +47,9 @@ type EnrollmentRequest = {
   }
 }
 
-type ActiveTab = 'users' | 'courses' | 'enrollments'
+type AllowedSignupEmail = { id: string; email: string; created_at: string }
+
+type ActiveTab = 'users' | 'courses' | 'enrollments' | 'signup-emails'
 
 export default function AdminDashboard() {
   const router = useRouter()
@@ -68,6 +70,28 @@ export default function AdminDashboard() {
   const [professorTempPassword, setProfessorTempPassword] = useState('')
   const [professorFirstName, setProfessorFirstName] = useState('')
   const [professorLastName, setProfessorLastName] = useState('')
+  const [allowedSignupEmails, setAllowedSignupEmails] = useState<AllowedSignupEmail[]>([])
+  const [newAllowedEmail, setNewAllowedEmail] = useState('')
+  const [addingAllowedEmail, setAddingAllowedEmail] = useState(false)
+  const [removingAllowedEmailId, setRemovingAllowedEmailId] = useState<string | null>(null)
+
+  function getCourseColor(courseId: string): string {
+    const palette = [
+      '#0892A5', // teal
+      '#2563EB', // blue
+      '#10B981', // green
+      '#F97316', // orange
+      '#EC4899', // pink
+      '#8B5CF6', // purple
+      '#F59E0B', // amber
+      '#EF4444', // red
+    ]
+    const hash = courseId.split('').reduce((acc, char) => {
+      return ((acc << 5) - acc) + char.charCodeAt(0)
+    }, 0)
+    const index = Math.abs(hash) % palette.length
+    return palette[index]
+  }
 
   useEffect(() => {
     fetchDashboardData()
@@ -134,7 +158,7 @@ export default function AdminDashboard() {
         .order('code', { ascending: true })
 
       if (coursesData) {
-        setCourses(coursesData as Course[])
+        setCourses(coursesData as unknown as Course[])
       }
 
       // Fetch enrollment requests (status = 'pending')
@@ -160,7 +184,15 @@ export default function AdminDashboard() {
         .order('registered_at', { ascending: false })
 
       if (enrollmentData) {
-        setEnrollmentRequests(enrollmentData as EnrollmentRequest[])
+        setEnrollmentRequests(enrollmentData as unknown as EnrollmentRequest[])
+      }
+
+      const { data: allowedEmailsData } = await supabase
+        .from('allowed_signup_emails')
+        .select('id, email, created_at')
+        .order('created_at', { ascending: false })
+      if (allowedEmailsData) {
+        setAllowedSignupEmails(allowedEmailsData as AllowedSignupEmail[])
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
@@ -295,6 +327,16 @@ export default function AdminDashboard() {
             </svg>
             <span className="nav-text">Enrollments</span>
           </div>
+          <div
+            className={`canvas-nav-item ${activeTab === 'signup-emails' ? 'active' : ''}`}
+            onClick={() => setActiveTab('signup-emails')}
+            style={{ cursor: 'pointer' }}
+          >
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <span className="nav-text">Signup emails</span>
+          </div>
         </nav>
       </aside>
 
@@ -331,7 +373,7 @@ export default function AdminDashboard() {
                 User Management
                 </h2>
               <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.875rem' }}>
-                Students sign up on their own and get access immediately. Only admins can add professor accounts; professors must reset their temporary password on first login.
+                Only emails in the &quot;Signup emails&quot; list can create an account. Students with an allowed email sign up on their own; admins add professor accounts (they must reset their temporary password on first login).
               </p>
               <section style={{ marginBottom: '2rem', padding: '1.25rem', background: 'var(--surface-hover)', borderRadius: '12px', border: '1px solid var(--border)' }}>
                 <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>
@@ -512,9 +554,23 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {courses.map((course) => (
+                      {courses.map((course) => {
+                        const color = getCourseColor(course.id)
+                        return (
                         <tr key={course.id}>
-                          <td>{course.code}</td>
+                          <td>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span
+                                style={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: 999,
+                                  background: color,
+                                }}
+                              />
+                              <span>{course.code}</span>
+                            </span>
+                          </td>
                           <td>{course.name}</td>
                           <td>
                             {course.professor ? (
@@ -556,7 +612,7 @@ export default function AdminDashboard() {
                             </button>
                           </td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
@@ -587,14 +643,28 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {enrollmentRequests.map((request) => (
+                      {enrollmentRequests.map((request) => {
+                        const color = getCourseColor(request.course_id)
+                        return (
                         <tr key={request.id}>
                           <td>
                             {[request.student.first_name, request.student.last_name].filter(Boolean).join(' ') || 'Unknown'}
                           </td>
                           <td>{request.student.email || '-'}</td>
                           <td>
-                            <strong>{request.course.code}</strong> - {request.course.name}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span
+                                style={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: 999,
+                                  background: color,
+                                }}
+                              />
+                              <span>
+                                <strong>{request.course.code}</strong> - {request.course.name}
+                              </span>
+                            </span>
                           </td>
                           <td>{new Date(request.registered_at).toLocaleDateString()}</td>
                           <td>
@@ -608,16 +678,136 @@ export default function AdminDashboard() {
                               >
                                 {processingEnrollment === request.id ? 'Processing…' : 'Accept'}
                               </button>
-        <button
-          type="button"
-          className="btn-secondary"
+                              <button
+                                type="button"
+                                className="btn-secondary"
                                 style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
                                 disabled={processingEnrollment === request.id}
                                 onClick={() => handleEnrollmentRequest(request.id, 'reject')}
-        >
+                              >
                                 Reject
-        </button>
+                              </button>
                             </div>
+                          </td>
+                        </tr>
+                      )})}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>
+                  <p>No pending enrollment requests</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Signup emails tab: emails that are allowed to sign up */}
+          {activeTab === 'signup-emails' && (
+            <div>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--navy-dark)', marginBottom: '1rem' }}>
+                Allowed signup emails
+              </h2>
+              <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.875rem' }}>
+                Only users with an email in this list can create an account. Add emails to allow new students or staff to sign up.
+              </p>
+              <section style={{ marginBottom: '2rem', padding: '1.25rem', background: 'var(--surface-hover)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>
+                  Add allowed emails
+                </h3>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                  Enter one or more emails (one per line or comma-separated). Duplicates and invalid lines are skipped.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label htmlFor="new-allowed-email">Emails</label>
+                    <textarea
+                      id="new-allowed-email"
+                      className="form-control"
+                      placeholder={'student1@example.com\nstudent2@example.com\nstudent3@example.com'}
+                      value={newAllowedEmail}
+                      onChange={(e) => setNewAllowedEmail(e.target.value)}
+                      disabled={addingAllowedEmail}
+                      rows={4}
+                      style={{ minWidth: '100%', resize: 'vertical' }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    style={{ padding: '0.5rem 1.25rem', alignSelf: 'flex-start' }}
+                    disabled={addingAllowedEmail || !newAllowedEmail.trim()}
+                    onClick={async () => {
+                      setError(null)
+                      setAddingAllowedEmail(true)
+                      const raw = newAllowedEmail
+                        .split(/[\n,;]+/)
+                        .map((s) => s.trim().toLowerCase())
+                        .filter((s) => s.length > 0 && s.includes('@'))
+                      const emails = Array.from(new Set(raw))
+                      let added = 0
+                      let skipped = 0
+                      for (const email of emails) {
+                        const { error: insertError } = await supabase
+                          .from('allowed_signup_emails')
+                          .insert({ email })
+                        if (insertError) {
+                          if (insertError.code === '23505') skipped += 1
+                          else {
+                            setError(insertError.message)
+                            break
+                          }
+                        } else {
+                          added += 1
+                        }
+                      }
+                      setAddingAllowedEmail(false)
+                      if (added > 0 || skipped > 0) {
+                        if (added > 0) fetchDashboardData()
+                        setNewAllowedEmail('')
+                        if (added > 0 && skipped > 0) {
+                          setError(`Added ${added} email(s). ${skipped} already in the list.`)
+                        } else if (skipped > 0) {
+                          setError(`All ${skipped} email(s) were already in the list.`)
+                        }
+                      }
+                    }}
+                  >
+                    {addingAllowedEmail ? 'Adding…' : 'Add emails'}
+                  </button>
+                </div>
+              </section>
+              {allowedSignupEmails.length > 0 ? (
+                <div className="table-container">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Email</th>
+                        <th>Added</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allowedSignupEmails.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.email}</td>
+                          <td>{new Date(row.created_at).toLocaleDateString()}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ padding: '0.35rem 0.75rem', fontSize: '0.875rem' }}
+                              disabled={removingAllowedEmailId === row.id}
+                              onClick={async () => {
+                                setRemovingAllowedEmailId(row.id)
+                                setError(null)
+                                await supabase.from('allowed_signup_emails').delete().eq('id', row.id)
+                                setAllowedSignupEmails((prev) => prev.filter((e) => e.id !== row.id))
+                                setRemovingAllowedEmailId(null)
+                              }}
+                            >
+                              {removingAllowedEmailId === row.id ? 'Removing…' : 'Remove'}
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -625,8 +815,8 @@ export default function AdminDashboard() {
                   </table>
                 </div>
               ) : (
-                <div style={{ textAlign: 'center', padding: '4rem', color: 'var(--text-muted)' }}>
-                  <p>No pending enrollment requests</p>
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                  No allowed emails yet. Add an email above to let that user sign up.
                 </div>
               )}
             </div>

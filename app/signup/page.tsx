@@ -19,6 +19,17 @@ export default function SignupPage() {
     setError(null)
     setSuccess(false)
     setLoading(true)
+    const res = await fetch('/api/auth/allowed-signup-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim().toLowerCase() }),
+    })
+    const { allowed } = await res.json().catch(() => ({ allowed: false }))
+    if (!allowed) {
+      setLoading(false)
+      setError('This email is not authorized to sign up. Contact your administrator to get access.')
+      return
+    }
     const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
