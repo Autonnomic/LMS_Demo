@@ -17,9 +17,9 @@ export default function AutonnomicLogo() {
         height={60}
         style={{ 
           objectFit: 'contain',
+          width: 'auto',
           height: 'auto',
-          width: '100%',
-          maxWidth: '180px'
+          maxWidth: '180px',
         }}
         priority
       />
