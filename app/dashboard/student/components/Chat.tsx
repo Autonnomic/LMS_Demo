@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useChat } from './ChatContext'
 import {
@@ -25,7 +25,6 @@ interface Conversation {
     last_name: string | null
     email: string | null
     role: string
-    last_seen_at?: string | null
   }
   last_message: {
     content: string
@@ -122,23 +121,6 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
   const [searching, setSearching] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageChannelRef = useRef<any>(null)
-  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const heartbeat = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    const headers: Record<string, string> = {}
-    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
-    fetch('/api/presence/heartbeat', { method: 'POST', credentials: 'include', headers }).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    if (!isOpen) return
-    heartbeat()
-    heartbeatRef.current = setInterval(heartbeat, 45000)
-    return () => {
-      if (heartbeatRef.current) clearInterval(heartbeatRef.current)
-    }
-  }, [isOpen, heartbeat])
 
   useEffect(() => {
     if (!isOpen) return
@@ -211,8 +193,8 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
         .from('conversations')
         .select(`
           *,
-          participant1:user_profiles!conversations_participant1_id_fkey(id, first_name, last_name, email, role, last_seen_at),
-          participant2:user_profiles!conversations_participant2_id_fkey(id, first_name, last_name, email, role, last_seen_at)
+          participant1:user_profiles!conversations_participant1_id_fkey(id, first_name, last_name, email, role),
+          participant2:user_profiles!conversations_participant2_id_fkey(id, first_name, last_name, email, role)
         `)
         .or(`participant1_id.eq.${userId},participant2_id.eq.${userId}`)
         .order('last_message_at', { ascending: false })
@@ -415,7 +397,6 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
       setShowNewChat(false)
       setSearchQuery('')
       setSearchResults([])
-      setEncryptChat(true)
       fetchConversations()
     } catch (e) {
       console.error('Error starting conversation:', e)

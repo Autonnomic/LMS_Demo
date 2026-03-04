@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import Sidebar from '../components/Sidebar'
 import Notifications from '../components/Notifications'
 import { ChatProvider } from '../components/ChatContext'
+import UserMenu from '../../components/UserMenu'
 
 type ViewMode = 'month' | 'week'
 
@@ -386,9 +387,9 @@ export default function CalendarPage() {
         <div className="canvas-layout">
           <Sidebar courses={courses} />
           <main className="canvas-main-content">
-            <div className="canvas-topbar">
+            {/* <div className="canvas-topbar">
               <h1 className="canvas-topbar-title">Calendar</h1>
-            </div>
+            </div> */}
             <div className="canvas-content-area">
               <div className="skeleton skeleton-text lg" style={{ width: '200px', marginBottom: '1rem' }} />
               <div className="skeleton" style={{ height: 360, borderRadius: 12 }} />
@@ -405,16 +406,14 @@ export default function CalendarPage() {
         <Sidebar courses={courses} />
         <main className="canvas-main-content">
           <div className="canvas-topbar">
-            {/* <h1 className="canvas-topbar-title">Calendar</h1> */}
+            <h1 className="canvas-topbar-title">Calendar</h1>
             <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
               {userId && <Notifications userId={userId} />}
-              <div className="canvas-user-menu" onClick={() => { supabase.auth.signOut(); router.push('/'); router.refresh(); }}>
-                <div className="canvas-user-avatar">{userInitials}</div>
-                <div>
-                  <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>{userName}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Logout</div>
-                </div>
-              </div>
+              <UserMenu
+                userName={userName}
+                userInitials={userInitials}
+                onLogout={() => { supabase.auth.signOut(); router.push('/'); router.refresh(); }}
+              />
             </div>
           </div>
 
@@ -443,7 +442,15 @@ export default function CalendarPage() {
               <div style={{ display: 'flex', gap: '0.25rem', marginLeft: 'auto' }}>
                 <button
                   type="button"
-                  className="btn-primary"
+                  className={viewMode === 'month' ? 'btn-primary' : 'btn-secondary'}
+                  style={{ padding: '0.4rem 0.75rem' }}
+                  onClick={() => setViewMode('month')}
+                >
+                  Month
+                </button>
+                <button
+                  type="button"
+                  className={viewMode === 'week' ? 'btn-primary' : 'btn-secondary'}
                   style={{ padding: '0.4rem 0.75rem' }}
                   onClick={() => setViewMode('week')}
                 >

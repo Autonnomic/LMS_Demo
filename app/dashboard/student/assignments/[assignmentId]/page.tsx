@@ -8,6 +8,7 @@ import Sidebar from '../../components/Sidebar'
 import Notifications from '../../components/Notifications'
 import { ChatProvider } from '../../components/ChatContext'
 import DocumentViewer from '../../components/DocumentViewer'
+import UserMenu from '../../../components/UserMenu'
 
 interface Assignment {
   id: string
@@ -279,11 +280,13 @@ export default function AssignmentDetailPage() {
               </h1>
               <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                 <div className="skeleton skeleton-avatar" />
-                <div className="canvas-user-menu">
-                  <div className="canvas-user-avatar skeleton" />
-                  <div>
-                    <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
-                    <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
+                <div className="canvas-user-menu-wrapper">
+                  <div className="canvas-user-menu canvas-user-menu-trigger">
+                    <div className="canvas-user-avatar skeleton" />
+                    <div>
+                      <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
+                      <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -354,21 +357,15 @@ export default function AssignmentDetailPage() {
           </div>
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {userId && <Notifications userId={userId} />}
-            <div className="canvas-user-menu" onClick={() => {
-              supabase.auth.signOut()
-              router.push('/')
-              router.refresh()
-            }}>
-              <div className="canvas-user-avatar">{userInitials}</div>
-              <div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>
-                  {userName}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Logout
-                </div>
-              </div>
-            </div>
+            <UserMenu
+              userName={userName}
+              userInitials={userInitials}
+              onLogout={() => {
+                supabase.auth.signOut()
+                router.push('/')
+                router.refresh()
+              }}
+            />
           </div>
         </div>
 

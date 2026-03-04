@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Notifications from '../../../student/components/Notifications'
 import DocumentViewer from '../../../student/components/DocumentViewer'
+import UserMenu from '../../../components/UserMenu'
 
 interface Course {
   id: string
@@ -774,11 +775,13 @@ export default function ProfessorCourseDetail() {
           <img src="/logo.png" alt="" className="canvas-topbar-logo-right" />
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <div className="skeleton skeleton-avatar" />
-            <div className="canvas-user-menu">
-              <div className="canvas-user-avatar skeleton" />
-              <div>
-                <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
-                <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
+            <div className="canvas-user-menu-wrapper">
+              <div className="canvas-user-menu canvas-user-menu-trigger">
+                <div className="canvas-user-avatar skeleton" />
+                <div>
+                  <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
+                  <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
+                </div>
               </div>
             </div>
           </div>
@@ -824,17 +827,7 @@ export default function ProfessorCourseDetail() {
           <h1 className="canvas-topbar-title course-topbar-title">{course.code} - {course.name}</h1>
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {currentUserId && <Notifications userId={currentUserId} />}
-            <div className="canvas-user-menu" onClick={handleLogout}>
-              <div className="canvas-user-avatar">{userInitials}</div>
-              <div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>
-                  {userName}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Logout
-                </div>
-              </div>
-            </div>
+            <UserMenu userName={userName} userInitials={userInitials} onLogout={handleLogout} />
           </div>
         </div>
 

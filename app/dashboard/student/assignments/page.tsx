@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import Sidebar from '../components/Sidebar'
 import Notifications from '../components/Notifications'
 import { ChatProvider } from '../components/ChatContext'
+import UserMenu from '../../components/UserMenu'
 
 interface Assignment {
   id: string
@@ -244,21 +245,15 @@ export default function AssignmentsPage() {
           <h1 className="canvas-topbar-title">Assignments</h1>
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {userId && <Notifications userId={userId} />}
-            <div className="canvas-user-menu" onClick={() => {
-              supabase.auth.signOut()
-              router.push('/')
-              router.refresh()
-            }}>
-              <div className="canvas-user-avatar">{userInitials}</div>
-              <div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>
-                  {userName}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Logout
-                </div>
-              </div>
-            </div>
+            <UserMenu
+              userName={userName}
+              userInitials={userInitials}
+              onLogout={() => {
+                supabase.auth.signOut()
+                router.push('/')
+                router.refresh()
+              }}
+            />
           </div>
         </div>
 

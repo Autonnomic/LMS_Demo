@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -39,22 +39,9 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
   const [searchResults, setSearchResults] = useState<SearchUser[]>([])
   const [searching, setSearching] = useState(false)
   const [mobileShowChat, setMobileShowChat] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageChannelRef = useRef<any>(null)
-  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const heartbeat = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    const headers: Record<string, string> = {}
-    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
-    fetch('/api/presence/heartbeat', { method: 'POST', credentials: 'include', headers }).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    heartbeat()
-    heartbeatRef.current = setInterval(heartbeat, 45000)
-    return () => { if (heartbeatRef.current) clearInterval(heartbeatRef.current) }
-  }, [heartbeat])
 
   useEffect(() => {
     fetchConversations()
@@ -99,8 +86,8 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
         .from('conversations')
         .select(`
           *,
-          participant1:user_profiles!conversations_participant1_id_fkey(id, first_name, last_name, email, role, last_seen_at),
-          participant2:user_profiles!conversations_participant2_id_fkey(id, first_name, last_name, email, role, last_seen_at)
+          participant1:user_profiles!conversations_participant1_id_fkey(id, first_name, last_name, email, role),
+          participant2:user_profiles!conversations_participant2_id_fkey(id, first_name, last_name, email, role)
         `)
         .or(`participant1_id.eq.${userId},participant2_id.eq.${userId}`)
         .order('last_message_at', { ascending: false })
@@ -284,6 +271,25 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
+  async function deleteConversation(conversationId: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    if (deletingId) return
+    setDeletingId(conversationId)
+    try {
+      const { error } = await supabase.from('conversations').delete().eq('id', conversationId)
+      if (error) throw error
+      if (selectedConversation === conversationId) {
+        setSelectedConversation(null)
+        setMessages([])
+      }
+      setConversations((prev) => prev.filter((c) => c.id !== conversationId))
+    } catch (err) {
+      console.error('Error deleting conversation:', err)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const currentConversation = conversations.find((c) => c.id === selectedConversation)
 
   const headerStyle = {
@@ -368,7 +374,14 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
           ) : conversations.length === 0 ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}><p>No conversations yet</p><p style={{ marginTop: '8px' }}>Tap &quot;New chat&quot; to search and start a conversation</p></div>
           ) : conversations.map((conv) => (
-            <div key={conv.id} onClick={() => { setSelectedConversation(conv.id); setMobileShowChat(true) }} style={{ ...listItemStyle, background: conv.unread_count > 0 ? 'rgba(8, 146, 165, 0.06)' : 'var(--surface)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.background = conv.unread_count > 0 ? 'rgba(8, 146, 165, 0.06)' : 'var(--surface)' }}>
+            <div
+              key={conv.id}
+              onClick={() => { setSelectedConversation(conv.id); setMobileShowChat(true) }}
+              style={{ ...listItemStyle, position: 'relative', background: conv.unread_count > 0 ? 'rgba(8, 146, 165, 0.06)' : 'var(--surface)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)' }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = conv.unread_count > 0 ? 'rgba(8, 146, 165, 0.06)' : 'var(--surface)' }}
+              className="inbox-conv-row"
+            >
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: conv.unread_count > 0 ? 600 : 500, color: 'var(--text)', fontSize: '0.9rem' }}>{conv.other_user?.first_name} {conv.other_user?.last_name}</div>
                 {conv.last_message && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>{conv.last_message.sender_id === userId ? 'You: ' : ''}{conv.last_message.content}</div>}
@@ -377,6 +390,38 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
                 {conv.unread_count > 0 && <span style={{ background: 'var(--teal-bright)', color: 'white', borderRadius: '50%', minWidth: '20px', height: '20px', fontSize: '0.7rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>{conv.unread_count > 99 ? '99+' : conv.unread_count}</span>}
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{conv.last_message_at ? new Date(conv.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
               </div>
+              {/* Gradient overlay (left to right) with delete button - visibility via CSS :hover */}
+              <div
+                className="inbox-conv-delete-overlay"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'linear-gradient(to right, transparent 0%, transparent 40%, rgba(0,0,0,0.08) 70%, rgba(0,0,0,0.25) 100%)',
+                  transition: 'opacity 0.2s ease',
+                }}
+              />
+              <button
+                type="button"
+                aria-label="Delete conversation"
+                onClick={(e) => deleteConversation(conv.id, e)}
+                disabled={deletingId === conv.id}
+                className={`ai-helper-chat-delete inbox-conv-delete-btn ${deletingId === conv.id ? 'inbox-conv-delete-btn-visible' : ''}`}
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  right: 12,
+                  transform: 'translateY(-50%)',
+                  cursor: deletingId === conv.id ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {deletingId === conv.id ? (
+                  <span style={{ width: 16, height: 16, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'inbox-spin 0.6s linear infinite' }} />
+                ) : (
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                )}
+              </button>
             </div>
           ))}
         </div>
@@ -431,6 +476,12 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
       <style>{`
         .inbox-page .inbox-left { width: 360px; min-width: 280px; border-right: 1px solid var(--border); flex-shrink: 0; flex-direction: column; height: 100%; }
         .inbox-page .inbox-right { flex: 1; min-width: 0; flex-direction: column; height: 100%; }
+        .inbox-page .inbox-conv-delete-overlay { opacity: 0; pointer-events: none; }
+        .inbox-page .inbox-conv-delete-btn { opacity: 0; pointer-events: none; }
+        .inbox-page .inbox-conv-row:hover .inbox-conv-delete-overlay { opacity: 1; }
+        .inbox-page .inbox-conv-row:hover .inbox-conv-delete-btn { opacity: 1; pointer-events: auto; }
+        .inbox-page .inbox-conv-delete-btn.inbox-conv-delete-btn-visible { opacity: 1; pointer-events: auto; }
+        @keyframes inbox-spin { to { transform: rotate(360deg); } }
         @media (max-width: 768px) {
           .inbox-page .inbox-left { display: none !important; }
           .inbox-page .inbox-left.mobile-open { display: flex !important; width: 100%; }

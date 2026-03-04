@@ -693,6 +693,12 @@ a:hover {
   flex-shrink: 0;
 }
 
+/* User menu wrapper: hover to show dropdown */
+.canvas-user-menu-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
 .canvas-user-menu {
   display: flex;
   align-items: center;
@@ -703,8 +709,62 @@ a:hover {
   transition: background 0.2s;
 }
 
-.canvas-user-menu:hover {
+.canvas-user-menu:hover,
+.canvas-user-menu-wrapper:hover .canvas-user-menu-trigger {
   background: var(--bg);
+}
+
+.canvas-user-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  padding: 0.5rem 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.2s, visibility 0.2s, transform 0.2s;
+  z-index: 100;
+}
+
+.canvas-user-menu-wrapper:hover .canvas-user-menu-dropdown {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.canvas-user-menu-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  color: var(--text);
+  text-decoration: none;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.canvas-user-menu-dropdown-item:hover {
+  background: var(--surface-hover);
+}
+
+.canvas-user-menu-dropdown-item-logout {
+  color: var(--error);
+}
+
+.canvas-user-menu-dropdown-item-logout:hover {
+  background: rgba(184, 84, 80, 0.08);
 }
 
 .canvas-user-avatar {

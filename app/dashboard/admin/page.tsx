@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import AutonnomicLogo from '../student/components/AutonnomicLogo'
+import UserMenu from '../components/UserMenu'
 
 type Profile = {
   id: string
@@ -345,17 +346,7 @@ export default function AdminDashboard() {
         <div className="canvas-topbar">
           <h1 className="canvas-topbar-title">Admin Dashboard</h1>
           <div className="canvas-topbar-actions">
-            <div className="canvas-user-menu" onClick={handleLogout}>
-              <div className="canvas-user-avatar">{userInitials}</div>
-              <div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>
-                  {userName}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Logout
-                </div>
-              </div>
-            </div>
+            <UserMenu userName={userName} userInitials={userInitials} onLogout={handleLogout} />
           </div>
         </div>
 

@@ -7,6 +7,7 @@ import Chat from '../../student/components/Chat'
 import Notifications from '../../student/components/Notifications'
 import { ChatProvider } from '../../student/components/ChatContext'
 import AiHelperChat from '../../student/components/AiHelperChat'
+import UserMenu from '../../components/UserMenu'
 
 export default function ProfessorAiHelperPage() {
   const router = useRouter()
@@ -77,20 +78,15 @@ export default function ProfessorAiHelperPage() {
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {userId && <Notifications userId={userId} />}
             {userId && <Chat userId={userId} userRole={userRole} hideTriggerButton />}
-            <div
-              className="canvas-user-menu"
-              onClick={() => {
+            <UserMenu
+              userName={userName}
+              userInitials={userInitials}
+              onLogout={() => {
                 supabase.auth.signOut()
                 router.push('/')
                 router.refresh()
               }}
-            >
-              <div className="canvas-user-avatar">{userInitials}</div>
-              <div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>{userName}</div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Logout</div>
-              </div>
-            </div>
+            />
           </div>
         </div>
         <div className="canvas-content-area" style={{ padding: 0, overflow: 'hidden' }}>

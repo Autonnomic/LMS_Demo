@@ -9,6 +9,7 @@ import { useChat } from '../../components/ChatContext'
 import Chat from '../../components/Chat'
 import Notifications from '../../components/Notifications'
 import { ChatProvider } from '../../components/ChatContext'
+import UserMenu from '../../../components/UserMenu'
 
 interface Course {
   id: string
@@ -321,11 +322,13 @@ function CourseDetailPageContent() {
             </h1>
             <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
               <div className="skeleton skeleton-avatar" />
-              <div className="canvas-user-menu">
-                <div className="canvas-user-avatar skeleton" />
-                <div>
-                  <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
-                  <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
+              <div className="canvas-user-menu-wrapper">
+                <div className="canvas-user-menu canvas-user-menu-trigger">
+                  <div className="canvas-user-avatar skeleton" />
+                  <div>
+                    <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
+                    <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -378,17 +381,7 @@ function CourseDetailPageContent() {
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {currentUserId && <Notifications userId={currentUserId} />}
             {currentUserId && <Chat userId={currentUserId} userRole={userRole} hideTriggerButton />}
-            <div className="canvas-user-menu" onClick={handleLogout}>
-              <div className="canvas-user-avatar">{userInitials}</div>
-              <div>
-                <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>
-                  {userName}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Logout
-                </div>
-              </div>
-            </div>
+            <UserMenu userName={userName} userInitials={userInitials} onLogout={handleLogout} />
           </div>
         </div>
 

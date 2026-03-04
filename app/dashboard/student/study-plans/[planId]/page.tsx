@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import Sidebar from '../../components/Sidebar'
 import Notifications from '../../components/Notifications'
 import { ChatProvider } from '../../components/ChatContext'
+import UserMenu from '../../../components/UserMenu'
 
 interface Course {
   id: string
@@ -283,28 +284,7 @@ export default function StudyPlanDetailPage() {
               style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}
             >
               {userId && <Notifications userId={userId} />}
-              <div className="canvas-user-menu" onClick={handleLogout}>
-                <div className="canvas-user-avatar">{userInitials}</div>
-                <div>
-                  <div
-                    style={{
-                      fontSize: '0.875rem',
-                      fontWeight: 500,
-                      color: 'var(--text)',
-                    }}
-                  >
-                    {userName}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '0.75rem',
-                      color: 'var(--text-muted)',
-                    }}
-                  >
-                    Logout
-                  </div>
-                </div>
-              </div>
+              <UserMenu userName={userName} userInitials={userInitials} onLogout={handleLogout} />
             </div>
           </div>
 

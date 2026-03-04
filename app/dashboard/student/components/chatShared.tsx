@@ -14,7 +14,6 @@ export interface Conversation {
     last_name: string | null
     email: string | null
     role: string
-    last_seen_at?: string | null
   }
   last_message: {
     content: string
