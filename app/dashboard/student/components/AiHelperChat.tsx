@@ -94,6 +94,27 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
     setError(null)
   }
 
+  async function handleDeleteChat(e: React.MouseEvent, chatId: string) {
+    e.stopPropagation()
+    if (!userId) return
+    try {
+      const { error } = await supabase
+        .from('ai_helper_chats')
+        .delete()
+        .eq('id', chatId)
+        .eq('user_id', userId)
+      if (error) throw error
+      setChats((prev) => prev.filter((c) => c.id !== chatId))
+      if (activeChatId === chatId) {
+        setActiveChatId(null)
+        setDraftMessages([])
+      }
+    } catch (err) {
+      console.error('Failed to delete chat:', err)
+      setError('Failed to delete chat.')
+    }
+  }
+
   async function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault()
     const text = input.trim()
@@ -217,26 +238,14 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
   )
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        height: '100%',
-        minHeight: 'calc(100vh - 120px)',
-        maxHeight: 'calc(100vh - 120px)',
-        background: 'var(--bg)',
-      }}
-    >
+    <div className="ai-helper-layout">
       {/* Collapsible chat sidebar */}
       <aside
+        className="ai-helper-sidebar"
         style={{
-          width: sidebarCollapsed ? 52 : 260,
-          minWidth: sidebarCollapsed ? 52 : 260,
-          borderRight: '1px solid var(--border)',
-          background: 'var(--surface)',
-          display: 'flex',
-          flexDirection: 'column',
+          width: sidebarCollapsed ? 52 : 300,
+          minWidth: sidebarCollapsed ? 52 : 300,
           transition: 'width 0.2s ease, min-width 0.2s ease',
-          overflow: 'hidden',
         }}
       >
         <div
@@ -323,30 +332,38 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
               </div>
             ) : (
               sortedChats.map((chat: Chat) => (
-                <button
+                <div
                   key={chat.id}
-                  type="button"
-                  onClick={() => handleSelectChat(chat.id)}
-                  style={{
-                    width: '100%',
-                    padding: '0.6rem 0.75rem',
-                    border: 'none',
-                    borderBottom: '1px solid var(--border)',
-                    background: activeChatId === chat.id ? 'var(--surface-hover)' : 'transparent',
-                    color: 'var(--text)',
-                    fontSize: '0.85rem',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
+                  className="ai-helper-chat-row"
+                  data-active={activeChatId === chat.id}
                 >
-                  <div style={{ fontWeight: activeChatId === chat.id ? 600 : 400 }}>{chat.title}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                    {new Date(chat.createdAt).toLocaleDateString()}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectChat(chat.id)}
+                    className="ai-helper-chat-row-btn"
+                  >
+                    <div className="ai-helper-chat-row-content">
+                      <div className="ai-helper-chat-row-title" style={{ fontWeight: activeChatId === chat.id ? 600 : 400 }}>
+                        {chat.title}
+                      </div>
+                      <div className="ai-helper-chat-row-date">
+                        {new Date(chat.createdAt).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </button>
+                  <div className="ai-helper-chat-row-overlay" data-active={activeChatId === chat.id}>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteChat(e, chat.id)}
+                      className="ai-helper-chat-delete"
+                      aria-label="Delete chat"
+                    >
+                      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   </div>
-                </button>
+                </div>
               ))
             )}
           </div>
@@ -354,14 +371,7 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
       </aside>
 
       {/* Main chat area */}
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          minWidth: 0,
-        }}
-      >
+      <div className="ai-helper-main">
         {usagePercent !== null && usagePercent >= 90 && usagePercent < 100 && (
           <div
             style={{
@@ -378,7 +388,9 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
         <div
           style={{
             flex: 1,
+            minWidth: 0,
             overflowY: 'auto',
+            overflowX: 'hidden',
             padding: '1rem 1.5rem',
             display: 'flex',
             flexDirection: 'column',
@@ -389,6 +401,7 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
             <div
               style={{
                 flex: 1,
+                minWidth: 0,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
@@ -397,12 +410,15 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
                 color: 'var(--text-muted)',
                 fontSize: '0.9rem',
                 textAlign: 'center',
-                padding: '2rem',
+                padding: '2rem 1.5rem',
+                maxWidth: '100%',
               }}
             >
               <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>💬</div>
               <div style={{ fontWeight: 500, color: 'var(--text)' }}>AI study helper</div>
-              <div>Ask anything — general concepts or course-specific (RAG when available).</div>
+              <p style={{ maxWidth: '22em', margin: 0, lineHeight: 1.5 }}>
+                Ask anything — general concepts or course-specific (RAG when available).
+              </p>
             </div>
           )}
           {messages.map((m) => (

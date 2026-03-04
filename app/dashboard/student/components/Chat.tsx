@@ -105,6 +105,8 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
     openChat: contextOpenChat,
     setOpenChat: setContextOpenChat,
     setStartWithUserId: setContextStartWithUserId,
+    unreadTotal,
+    setUnreadTotal,
   } = useChat()
   const startWithUserId = propStartWithUserId || contextStartWithUserId
   const [isOpen, setIsOpen] = useState(false)
@@ -114,12 +116,10 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
   const [newMessage, setNewMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [unreadTotal, setUnreadTotal] = useState(0)
   const [showNewChat, setShowNewChat] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchUser[]>([])
   const [searching, setSearching] = useState(false)
-  const [encryptChat, setEncryptChat] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageChannelRef = useRef<any>(null)
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -223,19 +223,33 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
       const formatted: Conversation[] = await Promise.all(
         data.map(async (conv: any) => {
           const otherUser = conv.participant1_id === userId ? conv.participant2 : conv.participant1
-          const { data: lastMsg } = await supabase
+
+          const { data: lastMsgRaw } = await supabase
             .from('messages')
             .select('content, sender_id, created_at, delivered_at, read_at, read')
             .eq('conversation_id', conv.id)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle()
+
+          let lastMsg = lastMsgRaw as any | null
+          if (lastMsg && conv.encryption_salt && isEncrypted(lastMsg.content)) {
+            try {
+              const key = await deriveKey(conv.id, conv.encryption_salt)
+              const decrypted = await decrypt(stripE2EPrefix(lastMsg.content), key)
+              lastMsg = { ...lastMsg, content: decrypted }
+            } catch {
+              lastMsg = { ...lastMsg, content: '[Unable to decrypt]' }
+            }
+          }
+
           const { count } = await supabase
             .from('messages')
             .select('*', { count: 'exact', head: true })
             .eq('conversation_id', conv.id)
             .eq('read', false)
             .neq('sender_id', userId)
+
           return {
             id: conv.id,
             participant1_id: conv.participant1_id,
@@ -248,6 +262,7 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
           }
         })
       )
+
       setConversations(formatted)
       setUnreadTotal(formatted.reduce((s, c) => s + c.unread_count, 0))
     } catch (e) {
@@ -332,7 +347,7 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
     const salt = conv?.encryption_salt
     let contentToSend = newMessage.trim()
 
-    if (encryptChat && salt) {
+    if (salt) {
       try {
         const key = await deriveKey(selectedConversation, salt)
         const encrypted = await encrypt(contentToSend, key)
@@ -704,7 +719,7 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
                               }}
                             >
                               {conv.last_message.sender_id === userId ? 'You: ' : ''}
-                              {isEncrypted(conv.last_message.content) ? '🔒 Encrypted message' : conv.last_message.content}
+                              {conv.last_message.content}
                             </div>
                           )}
                         </div>
@@ -827,16 +842,6 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
                   <div ref={messagesEndRef} />
                 </div>
                 <div style={chatStyles.inputArea}>
-                  {currentConversation?.encryption_salt && (
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                      <input
-                        type="checkbox"
-                        checked={encryptChat}
-                        onChange={(e) => setEncryptChat(e.target.checked)}
-                      />
-                      Encrypt
-                    </label>
-                  )}
                   <input
                     type="text"
                     value={newMessage}

@@ -23,6 +23,151 @@ interface AssistantBody {
   history?: HistoryMessage[]
 }
 
+function isEducationalQuestion(question: string): boolean {
+  const lower = question.toLowerCase()
+
+  // Strong positive signals that this is about education / learning
+  const educationalKeywords = [
+    'exam',
+    'exams',
+    'test',
+    'quiz',
+    'assignment',
+    'homework',
+    'hw',
+    'course',
+    'class',
+    'lecture',
+    'syllabus',
+    'curriculum',
+    'semester',
+    'module',
+    'chapter',
+    'topic',
+    'lesson',
+    'practice question',
+    'practice questions',
+    'mcq',
+    'multiple choice',
+    'university',
+    'college',
+    'school',
+    'teacher',
+    'professor',
+    'tutor',
+    'study',
+    'studying',
+    'revision',
+    'revise',
+    'learn',
+    'learning',
+    'concept',
+    'explain',
+    'definition',
+    'derivation',
+    'formula',
+    'theorem',
+    'proof',
+    'exercise',
+    'problem',
+    'solve',
+    'solution',
+  ]
+  if (educationalKeywords.some((k) => lower.includes(k))) return true
+
+  // Clear non‑educational intents: jokes, entertainment, chit‑chat, etc.
+  const nonEducationalKeywords = [
+    'joke',
+    'jokes',
+    'meme',
+    'memes',
+    'story',
+    'stories',
+    'song',
+    'songs',
+    'lyrics',
+    'poem',
+    'poems',
+    'rap',
+    'facebook',
+    'instagram',
+    'tiktok',
+    'twitter',
+    'x.com',
+    'netflix',
+    'prime video',
+    'movie',
+    'movies',
+    'series',
+    'tv show',
+    'tv shows',
+    'celebrity',
+    'celebrities',
+    'gossip',
+    'politics',
+    'election',
+    'elections',
+    'trump',
+    'biden',
+    'modi',
+    'bjp',
+    'congress',
+    'dating',
+    'relationship',
+    'relationships',
+    'girlfriend',
+    'boyfriend',
+    'crush',
+    'marriage',
+    'divorce',
+    'astrology',
+    'horoscope',
+    'zodiac',
+    'lottery',
+    'betting',
+    'casino',
+    'gambling',
+    'stock market',
+    'crypto',
+    'bitcoin',
+    'ether',
+    'ethereum',
+    'dogecoin',
+    'weather',
+    'forecast',
+    'recipe',
+    'cook',
+    'cooking',
+    'travel',
+    'vacation',
+    'holiday',
+  ]
+  if (nonEducationalKeywords.some((k) => lower.includes(k))) return false
+
+  // Short friendly messages without any obvious educational language → treat as non‑educational.
+  const collapsed = lower.replace(/[\s!?.]+/g, ' ').trim()
+  const shortSmallTalk = [
+    'hi',
+    'hello',
+    'hey',
+    'yo',
+    'whats up',
+    'what\'s up',
+    'how are you',
+    'how r u',
+    'sup',
+    'good morning',
+    'good night',
+    'good evening',
+    'good afternoon',
+  ]
+  if (shortSmallTalk.includes(collapsed)) return false
+
+  // Default: be permissive and treat as educational so that genuine learning
+  // questions that don't match the above keywords are still answered.
+  return true
+}
+
 export async function POST(request: Request) {
   try {
     const user = await getAuthUser(request)
@@ -51,6 +196,15 @@ export async function POST(request: Request) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     if (!serviceRoleKey) {
       return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+    }
+
+    // Enforce "education‑only" behavior. Non‑educational questions are rejected
+    // early and do NOT count against the daily AI usage limit.
+    if (!isEducationalQuestion(question)) {
+      return NextResponse.json({
+        mode: 'simple' as RouteMode,
+        answer: 'Please ask education related questions only',
+      })
     }
 
     const admin = createAdminClient(
@@ -225,7 +379,16 @@ async function answerSimple(
     {
       role: 'system' as const,
       content:
-        'You are a university AI helper. Answer clearly and briefly, using simple language and at most 3–4 short paragraphs. When the user says they did not understand, re-explain the earlier idea more simply with concrete, step-by-step examples instead of asking them what they do not understand. Do not restate long questions in full.',
+        [
+          'You are a university AI helper.',
+          'You must only answer questions that are related to education, learning, courses, exams, academic subjects, or skill/knowledge development.',
+          'If the user asks about anything non-educational (for example: jokes, entertainment, personal life advice, relationships, politics, news, gossip, social media, travel, recipes, etc.), reply EXACTLY with this sentence and nothing else:',
+          '"Please ask education related questions only"',
+          '',
+          'For valid educational questions, answer clearly and briefly using simple language and at most 3–4 short paragraphs.',
+          'When the user says they did not understand, re-explain the earlier idea more simply with concrete, step-by-step examples instead of asking them what they do not understand.',
+          'Do not restate long questions in full.',
+        ].join(' '),
     },
     ...limitedHistory.map((m) => ({
       role: m.role,

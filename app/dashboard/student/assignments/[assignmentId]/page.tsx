@@ -27,6 +27,7 @@ interface Assignment {
 interface Submission {
   id: string
   submitted_at: string
+  updated_at: string | null
   file_url: string | null
   file_name: string | null
   submission_text: string | null
@@ -182,6 +183,11 @@ export default function AssignmentDetailPage() {
     }
   }
 
+  function isPdfFile(file: File): boolean {
+    const name = (file.name || '').toLowerCase()
+    return name.endsWith('.pdf') || file.type === 'application/pdf'
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
@@ -195,43 +201,51 @@ export default function AssignmentDetailPage() {
         return
       }
 
-      let fileUrl = submission?.file_url || null
-      let fileName = submission?.file_name || null
+      const canUpdateOnce = submission && submission.updated_at == null
+      if (submission && !canUpdateOnce) {
+        setError('You can only submit and update this assignment once. No further changes allowed.')
+        return
+      }
 
-      // Upload file if selected
+      if (selectedFile && !isPdfFile(selectedFile)) {
+        setError('Only PDF files are accepted. Please upload a .pdf file.')
+        return
+      }
+
+      let fileUrl: string | null = submission?.file_url ?? null
+      let fileName: string | null = submission?.file_name ?? null
       if (selectedFile) {
         fileUrl = await handleFileUpload(selectedFile)
         fileName = selectedFile.name
       }
 
-      // Create or update submission
-      const submissionData: any = {
-        assignment_id: assignmentId,
-        student_id: user.id,
+      const submissionPayload = {
         submission_text: submissionText || null,
         file_url: fileUrl,
         file_name: fileName,
-        status: 'submitted'
+        status: 'submitted',
+        ...(canUpdateOnce ? { updated_at: new Date().toISOString() } : {})
       }
 
-      if (submission) {
-        // Update existing submission
+      if (canUpdateOnce) {
         const { error: updateError } = await supabase
           .from('assignment_submissions')
-          .update(submissionData)
-          .eq('id', submission.id)
-
+          .update(submissionPayload)
+          .eq('id', submission!.id)
         if (updateError) throw updateError
       } else {
-        // Create new submission
+        const submissionData = {
+          assignment_id: assignmentId,
+          student_id: user.id,
+          ...submissionPayload
+        }
         const { error: insertError } = await supabase
           .from('assignment_submissions')
           .insert(submissionData)
-
         if (insertError) throw insertError
       }
 
-      setSuccess('Assignment submitted successfully!')
+      setSuccess(canUpdateOnce ? 'Submission updated successfully!' : 'Assignment submitted successfully!')
       await fetchAssignmentData()
       setSelectedFile(null)
     } catch (error: any) {
@@ -457,7 +471,8 @@ export default function AssignmentDetailPage() {
             )}
           </div>
 
-          {/* Submission Form */}
+          {/* Submission Form - show when no submission or when one update is still allowed */}
+          {(!submission || submission.updated_at == null) ? (
           <div style={{
             background: 'white',
             borderRadius: '8px',
@@ -468,6 +483,9 @@ export default function AssignmentDetailPage() {
             <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem', color: 'var(--text)' }}>
               {submission ? 'Update Submission' : 'Submit Assignment'}
             </h2>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+              Only PDF files are accepted. {submission ? 'You can update once after your first submission.' : 'You can submit once and update once.'}
+            </p>
 
             <form onSubmit={handleSubmit}>
               <div className="form-group" style={{ marginBottom: '1.5rem' }}>
@@ -486,25 +504,34 @@ export default function AssignmentDetailPage() {
 
               <div className="form-group" style={{ marginBottom: '1.5rem' }}>
                 <label htmlFor="file-upload" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
-                  Upload File (Optional)
+                  {submission ? 'Upload new PDF (optional; keeps current file if not changed)' : 'Upload PDF (optional)'}
                 </label>
                 <input
                   id="file-upload"
                   type="file"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  accept=".pdf,application/pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null
+                    if (file && !isPdfFile(file)) {
+                      setError('Only PDF files are accepted.')
+                      setSelectedFile(null)
+                      e.target.value = ''
+                      return
+                    }
+                    setError(null)
+                    setSelectedFile(file)
+                  }}
                   className="form-control"
                   style={{ padding: '0.5rem' }}
                 />
                 {submission?.file_name && !selectedFile && (
                   <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                    Current file: <a href={submission.file_url || '#'} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--teal-bright)' }}>
-                      {submission.file_name}
-                    </a>
+                    Current file: {submission.file_name}
                   </div>
                 )}
                 {selectedFile && (
                   <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                    Selected: {selectedFile.name}
+                    New file: {selectedFile.name}
                   </div>
                 )}
               </div>
@@ -513,18 +540,31 @@ export default function AssignmentDetailPage() {
                 <button
                   type="submit"
                   className="btn-primary"
-                  disabled={submitting || uploading || (!submissionText && !selectedFile && !submission)}
+                  disabled={submitting || uploading || (!submissionText && !selectedFile && !(submission?.file_url))}
                 >
-                  {uploading ? 'Uploading...' : submitting ? 'Submitting...' : submission ? 'Update Submission' : 'Submit Assignment'}
+                  {uploading ? 'Uploading...' : submitting ? (submission ? 'Updating...' : 'Submitting...') : submission ? 'Update Submission' : 'Submit Assignment'}
                 </button>
                 {submission && (
-                  <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                    Last submitted: {formatDate(submission.submitted_at)}
-                  </div>
+                  <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                    First submitted: {formatDate(submission.submitted_at)}
+                  </span>
                 )}
               </div>
             </form>
           </div>
+          ) : (
+          <div style={{
+            background: 'white',
+            borderRadius: '8px',
+            padding: '2rem',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+            border: '1px solid #e5e7eb'
+          }}>
+            <p style={{ fontSize: '0.9375rem', color: 'var(--text-muted)' }}>
+              You have submitted and used your one update. No further changes are allowed.
+            </p>
+          </div>
+          )}
 
           {/* Submission History / Grade */}
           {submission && (

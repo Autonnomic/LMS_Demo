@@ -38,7 +38,6 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchUser[]>([])
   const [searching, setSearching] = useState(false)
-  const [encryptChat, setEncryptChat] = useState(false)
   const [mobileShowChat, setMobileShowChat] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageChannelRef = useRef<any>(null)
@@ -107,14 +106,50 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
         .order('last_message_at', { ascending: false })
       if (error) throw error
       if (!data) return
+
       const formatted: Conversation[] = await Promise.all(
         data.map(async (conv: any) => {
           const otherUser = conv.participant1_id === userId ? conv.participant2 : conv.participant1
-          const { data: lastMsg } = await supabase.from('messages').select('content, sender_id, created_at, delivered_at, read_at, read').eq('conversation_id', conv.id).order('created_at', { ascending: false }).limit(1).maybeSingle()
-          const { count } = await supabase.from('messages').select('*', { count: 'exact', head: true }).eq('conversation_id', conv.id).eq('read', false).neq('sender_id', userId)
-          return { id: conv.id, participant1_id: conv.participant1_id, participant2_id: conv.participant2_id, last_message_at: conv.last_message_at, encryption_salt: conv.encryption_salt, other_user: otherUser, last_message: lastMsg || null, unread_count: count || 0 }
+
+          const { data: lastMsgRaw } = await supabase
+            .from('messages')
+            .select('content, sender_id, created_at, delivered_at, read_at, read')
+            .eq('conversation_id', conv.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          let lastMsg = lastMsgRaw as any | null
+          if (lastMsg && conv.encryption_salt && isEncrypted(lastMsg.content)) {
+            try {
+              const key = await deriveKey(conv.id, conv.encryption_salt)
+              const decrypted = await decrypt(stripE2EPrefix(lastMsg.content), key)
+              lastMsg = { ...lastMsg, content: decrypted }
+            } catch {
+              lastMsg = { ...lastMsg, content: '[Unable to decrypt]' }
+            }
+          }
+
+          const { count } = await supabase
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .eq('conversation_id', conv.id)
+            .eq('read', false)
+            .neq('sender_id', userId)
+
+          return {
+            id: conv.id,
+            participant1_id: conv.participant1_id,
+            participant2_id: conv.participant2_id,
+            last_message_at: conv.last_message_at,
+            encryption_salt: conv.encryption_salt,
+            other_user: otherUser,
+            last_message: lastMsg || null,
+            unread_count: count || 0,
+          }
         })
       )
+
       setConversations(formatted)
     } catch (e) {
       console.error('Error fetching conversations:', e)
@@ -174,7 +209,7 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
     const conv = conversations.find((c) => c.id === selectedConversation)
     const salt = conv?.encryption_salt
     let contentToSend = newMessage.trim()
-    if (encryptChat && salt) {
+    if (salt) {
       try {
         const key = await deriveKey(selectedConversation, salt)
         contentToSend = withE2EPrefix(await encrypt(contentToSend, key))
@@ -217,7 +252,6 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
       setShowNewChat(false)
       setSearchQuery('')
       setSearchResults([])
-      setEncryptChat(true)
       setMobileShowChat(true)
       fetchConversations()
     } catch (e) {
@@ -337,7 +371,7 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
             <div key={conv.id} onClick={() => { setSelectedConversation(conv.id); setMobileShowChat(true) }} style={{ ...listItemStyle, background: conv.unread_count > 0 ? 'rgba(8, 146, 165, 0.06)' : 'var(--surface)' }} onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)' }} onMouseLeave={(e) => { e.currentTarget.style.background = conv.unread_count > 0 ? 'rgba(8, 146, 165, 0.06)' : 'var(--surface)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: conv.unread_count > 0 ? 600 : 500, color: 'var(--text)', fontSize: '0.9rem' }}>{conv.other_user?.first_name} {conv.other_user?.last_name}</div>
-                {conv.last_message && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>{conv.last_message.sender_id === userId ? 'You: ' : ''}{isEncrypted(conv.last_message.content) ? '🔒 Encrypted message' : conv.last_message.content}</div>}
+                {conv.last_message && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '2px' }}>{conv.last_message.sender_id === userId ? 'You: ' : ''}{conv.last_message.content}</div>}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                 {conv.unread_count > 0 && <span style={{ background: 'var(--teal-bright)', color: 'white', borderRadius: '50%', minWidth: '20px', height: '20px', fontSize: '0.7rem', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>{conv.unread_count > 99 ? '99+' : conv.unread_count}</span>}
@@ -367,7 +401,6 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text)' }}>{currentConversation?.other_user?.first_name} {currentConversation?.other_user?.last_name}</div>
         </div>
-        {currentConversation?.encryption_salt && <span style={{ fontSize: '0.7rem', background: 'var(--surface-hover)', padding: '2px 8px', borderRadius: '8px' }} title="E2E">🔒</span>}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--bg)' }}>
         {messages.map((m) => {
@@ -387,7 +420,6 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
         <div ref={messagesEndRef} />
       </div>
       <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
-        {currentConversation?.encryption_salt && <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: 'var(--text-muted)' }}><input type="checkbox" checked={encryptChat} onChange={(e) => setEncryptChat(e.target.checked)} />Encrypt</label>}
         <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }} placeholder="Type a message..." style={{ flex: 1, padding: '10px 14px', border: '1px solid var(--border)', borderRadius: '20px', fontSize: '0.9rem', outline: 'none', background: 'var(--surface)' }} />
         <button type="button" onClick={sendMessage} disabled={!newMessage.trim() || sending} style={{ padding: '10px 18px', background: sending ? 'var(--text-muted)' : 'var(--teal-bright)', color: 'white', border: 'none', borderRadius: '20px', cursor: sending ? 'not-allowed' : 'pointer', fontWeight: 500, fontSize: '0.9rem' }}>Send</button>
       </div>

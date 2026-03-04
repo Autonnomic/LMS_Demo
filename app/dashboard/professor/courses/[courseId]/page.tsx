@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter, useParams, usePathname } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import AutonnomicLogo from '../../../student/components/AutonnomicLogo'
 import Notifications from '../../../student/components/Notifications'
 import DocumentViewer from '../../../student/components/DocumentViewer'
 
@@ -16,12 +15,6 @@ interface Course {
   credits: number
   semester: string | null
   academic_year: string | null
-}
-
-interface SidebarCourse {
-  id: string
-  code: string
-  name: string
 }
 
 interface Schedule {
@@ -84,7 +77,6 @@ const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Fri
 export default function ProfessorCourseDetail() {
   const router = useRouter()
   const params = useParams()
-  const pathname = usePathname()
   const courseId = params.courseId as string
   const [loading, setLoading] = useState(true)
   const [course, setCourse] = useState<Course | null>(null)
@@ -104,7 +96,6 @@ export default function ProfessorCourseDetail() {
   const [userName, setUserName] = useState<string>('')
   const [userInitials, setUserInitials] = useState<string>('')
   const [currentUserId, setCurrentUserId] = useState<string>('')
-  const [courses, setCourses] = useState<SidebarCourse[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null)
   const [showAssignmentForm, setShowAssignmentForm] = useState(false)
@@ -161,7 +152,6 @@ export default function ProfessorCourseDetail() {
         setCurrentUserId(user.id)
         await Promise.all([
           fetchCourseData(),
-          fetchAllCourses(user.id),
           fetchAssignments()
         ])
       } catch (error) {
@@ -186,19 +176,6 @@ export default function ProfessorCourseDetail() {
       fetchAllStudents()
     }
   }, [activeTab, courseId])
-
-  async function fetchAllCourses(professorId: string) {
-    try {
-      const { data: coursesData } = await supabase
-        .from('courses')
-        .select('id, code, name')
-        .eq('professor_id', professorId)
-        .order('code', { ascending: true })
-      if (coursesData) setCourses(coursesData)
-    } catch (error) {
-      console.error('Error fetching courses:', error)
-    }
-  }
 
   async function fetchAllStudents() {
     try {
@@ -792,136 +769,56 @@ export default function ProfessorCourseDetail() {
 
   if (loading) {
     return (
-      <div className="canvas-layout">
-        <aside className="canvas-sidebar">
-          <div className="canvas-sidebar-header">
-            <div className="sidebar-logo-container">
-              <div className="skeleton skeleton-avatar" />
-            </div>
-          </div>
-          <nav className="canvas-sidebar-nav">
-            <div className="canvas-nav-item">
-              <div className="skeleton skeleton-avatar" />
-              <span className="nav-text skeleton skeleton-text" style={{ width: '60%' }} />
-            </div>
-            <div className="canvas-nav-item">
-              <div className="skeleton skeleton-avatar" />
-              <span className="nav-text skeleton skeleton-text" style={{ width: '70%' }} />
-            </div>
-          </nav>
-        </aside>
-
-        <main className="canvas-main-content">
-          <div className="canvas-topbar">
-            <img src="/logo.png" alt="" className="canvas-topbar-logo-right" />
-            <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <div className="skeleton skeleton-avatar" />
-              <div className="canvas-user-menu">
-                <div className="canvas-user-avatar skeleton" />
-                <div>
-                  <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
-                  <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
-                </div>
+      <main className="canvas-main-content">
+        <div className="canvas-topbar">
+          <img src="/logo.png" alt="" className="canvas-topbar-logo-right" />
+          <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div className="skeleton skeleton-avatar" />
+            <div className="canvas-user-menu">
+              <div className="canvas-user-avatar skeleton" />
+              <div>
+                <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
+                <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
               </div>
             </div>
           </div>
+        </div>
 
-          <div className="canvas-content-area">
-            <div className="skeleton skeleton-text lg" style={{ width: '50%', marginBottom: '1.5rem' }} />
-            <div className="professor-tabs">
-              {[1, 2, 3, 4].map((i) => (
-                <button key={i} className="professor-tab" type="button">
-                  <span className="skeleton skeleton-text sm" style={{ width: '64px' }} />
-                </button>
-              ))}
-            </div>
-            <div className="skeleton-card skeleton">
-              <div className="skeleton skeleton-text lg" style={{ width: '40%', marginBottom: '0.75rem' }} />
-              <div className="skeleton skeleton-text sm" style={{ width: '90%', marginBottom: '0.5rem' }} />
-              <div className="skeleton skeleton-text sm" style={{ width: '80%', marginBottom: '0.5rem' }} />
-              <div className="skeleton skeleton-text sm" style={{ width: '70%' }} />
-            </div>
+        <div className="canvas-content-area">
+          <div className="skeleton skeleton-text lg" style={{ width: '50%', marginBottom: '1.5rem' }} />
+          <div className="professor-tabs">
+            {[1, 2, 3, 4].map((i) => (
+              <button key={i} className="professor-tab" type="button">
+                <span className="skeleton skeleton-text sm" style={{ width: '64px' }} />
+              </button>
+            ))}
           </div>
-        </main>
-      </div>
+          <div className="skeleton-card skeleton">
+            <div className="skeleton skeleton-text lg" style={{ width: '40%', marginBottom: '0.75rem' }} />
+            <div className="skeleton skeleton-text sm" style={{ width: '90%', marginBottom: '0.5rem' }} />
+            <div className="skeleton skeleton-text sm" style={{ width: '80%', marginBottom: '0.5rem' }} />
+            <div className="skeleton skeleton-text sm" style={{ width: '70%' }} />
+          </div>
+        </div>
+      </main>
     )
   }
 
   if (!course) {
     return (
-      <div className="canvas-layout">
-        <div className="canvas-main-content">
-          <div style={{ textAlign: 'center', padding: '4rem' }}>
-            <p>Course not found</p>
-            <Link href="/dashboard/professor" style={{ color: 'var(--teal-bright)' }}>
-              Back to Dashboard
-            </Link>
-          </div>
+      <main className="canvas-main-content">
+        <div style={{ textAlign: 'center', padding: '4rem' }}>
+          <p>Course not found</p>
+          <Link href="/dashboard/professor" style={{ color: 'var(--teal-bright)' }}>
+            Back to Dashboard
+          </Link>
         </div>
-      </div>
+      </main>
     )
   }
 
   return (
-    <div className="canvas-layout">
-      {/* Sidebar */}
-      <aside className="canvas-sidebar">
-        <div className="canvas-sidebar-header">
-          <div className="sidebar-logo-container">
-            <AutonnomicLogo />
-          </div>
-        </div>
-        <nav className="canvas-sidebar-nav">
-          <Link href="/dashboard/professor" className={`canvas-nav-item ${pathname === '/dashboard/professor' ? 'active' : ''}`}>
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-            <span className="nav-text">Dashboard</span>
-          </Link>
-          <Link href="/dashboard/professor/inbox" className={`canvas-nav-item ${pathname === '/dashboard/professor/inbox' ? 'active' : ''}`}>
-            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-            <span className="nav-text">INBOX</span>
-          </Link>
-        </nav>
-        <div className="canvas-courses-section">
-          <div className="canvas-courses-section-title">My Courses</div>
-          <div className="courses-list expanded">
-            {courses.map((c) => (
-              <Link
-                key={c.id}
-                href={`/dashboard/professor/courses/${c.id}`}
-                className={`canvas-course-link ${c.id === courseId ? 'active' : ''}`}
-              >
-                <span className="course-code-small">{c.code}</span>
-                <span className="course-name">{c.name}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </aside>
-
-      <nav className="canvas-sidebar-mobile-bottom" aria-label="Mobile navigation">
-        <Link href="/dashboard/professor" className={`canvas-mobile-nav-item ${pathname === '/dashboard/professor' ? 'active' : ''}`} aria-label="Dashboard">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-          </svg>
-        </Link>
-        <Link href="/dashboard/professor/inbox" className={`canvas-mobile-nav-item ${pathname === '/dashboard/professor/inbox' ? 'active' : ''}`} aria-label="Inbox">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
-        </Link>
-        <Link href="/dashboard/professor" className="canvas-mobile-nav-item" aria-label="My Courses">
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-          </svg>
-        </Link>
-      </nav>
-
-      {/* Main Content */}
-      <main className="canvas-main-content">
+    <main className="canvas-main-content">
         <div className="canvas-topbar">
           <img src="/logo.png" alt="" className="canvas-topbar-logo-right" />
           <h1 className="canvas-topbar-title course-topbar-title">{course.code} - {course.name}</h1>
@@ -1946,8 +1843,6 @@ export default function ProfessorCourseDetail() {
             </div>
           )}
         </div>
-      </main>
-
       {viewingDocument && (
         <DocumentViewer
           url={viewingDocument.url}
@@ -1955,6 +1850,6 @@ export default function ProfessorCourseDetail() {
           onClose={() => setViewingDocument(null)}
         />
       )}
-    </div>
+    </main>
   )
 }
