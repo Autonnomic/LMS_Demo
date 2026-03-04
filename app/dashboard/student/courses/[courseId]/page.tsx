@@ -10,6 +10,7 @@ import Chat from '../../components/Chat'
 import Notifications from '../../components/Notifications'
 import { ChatProvider } from '../../components/ChatContext'
 import UserMenu from '../../../components/UserMenu'
+import DocumentViewer from '../../components/DocumentViewer'
 
 interface Course {
   id: string
@@ -59,6 +60,14 @@ interface CourseAssignment {
   submission?: { id: string; status: string; grade: number | null } | null
 }
 
+interface CourseMaterial {
+  id: string
+  course_id: string
+  file_name: string
+  file_path: string
+  created_at: string
+}
+
 function CourseDetailPageContent() {
   const router = useRouter()
   const params = useParams()
@@ -75,6 +84,10 @@ function CourseDetailPageContent() {
   const [userInitials, setUserInitials] = useState<string>('')
   const [currentUserId, setCurrentUserId] = useState<string>('')
   const [userRole, setUserRole] = useState<'student' | 'professor'>('student')
+  const [activeCourseTab, setActiveCourseTab] = useState<'overview' | 'materials'>('overview')
+  const [courseMaterials, setCourseMaterials] = useState<CourseMaterial[]>([])
+  const [materialsLoading, setMaterialsLoading] = useState(false)
+  const [viewingMaterial, setViewingMaterial] = useState<{ url: string; fileName: string } | null>(null)
 
   const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -115,6 +128,27 @@ function CourseDetailPageContent() {
     loadInitial()
     return () => { cancelled = true }
   }, [courseId])
+
+  useEffect(() => {
+    if (activeCourseTab === 'materials' && courseId) {
+      setMaterialsLoading(true)
+      supabase
+        .from('course_materials')
+        .select('*')
+        .eq('course_id', courseId)
+        .order('created_at', { ascending: false })
+        .then(({ data, error }) => {
+          if (!error) setCourseMaterials(data || [])
+          else setCourseMaterials([])
+        })
+        .finally(() => setMaterialsLoading(false))
+    }
+  }, [activeCourseTab, courseId])
+
+  function getMaterialUrl(filePath: string): string {
+    const { data } = supabase.storage.from('course-materials').getPublicUrl(filePath)
+    return data.publicUrl
+  }
 
   async function fetchAllCourses(studentId: string) {
     try {
@@ -404,6 +438,42 @@ function CourseDetailPageContent() {
             </div>
           </div>
 
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={() => setActiveCourseTab('overview')}
+              style={{
+                padding: '0.5rem 1rem',
+                border: 'none',
+                background: activeCourseTab === 'overview' ? 'var(--teal-bright)' : 'var(--surface)',
+                color: activeCourseTab === 'overview' ? 'white' : 'var(--text)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 500,
+                fontSize: '0.9rem'
+              }}
+            >
+              Overview
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveCourseTab('materials')}
+              style={{
+                padding: '0.5rem 1rem',
+                border: 'none',
+                background: activeCourseTab === 'materials' ? 'var(--teal-bright)' : 'var(--surface)',
+                color: activeCourseTab === 'materials' ? 'white' : 'var(--text)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 500,
+                fontSize: '0.9rem'
+              }}
+            >
+              Materials
+            </button>
+          </div>
+
+          {activeCourseTab === 'overview' && (
           <div className="course-detail-content">
             <div className="course-detail-main">
               {/* Schedule */}
@@ -614,7 +684,71 @@ function CourseDetailPageContent() {
               </div>
             </div>
           </div>
+          )}
+
+          {activeCourseTab === 'materials' && (
+            <div className="course-detail-content" style={{ maxWidth: '100%' }}>
+              <div className="course-info-card" style={{ flex: 1 }}>
+                <h3>Course materials</h3>
+                {materialsLoading ? (
+                  <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
+                ) : courseMaterials.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {courseMaterials.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setViewingMaterial({ url: getMaterialUrl(m.file_path), fileName: m.file_name })}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.75rem',
+                          padding: '0.75rem 1rem',
+                          background: 'var(--bg)',
+                          border: '1px solid var(--border)',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          width: '100%',
+                          font: 'inherit',
+                          color: 'var(--text)',
+                          transition: 'border-color 0.2s, box-shadow 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--teal-bright)'
+                          e.currentTarget.style.boxShadow = '0 0 0 1px var(--teal-bright)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = ''
+                          e.currentTarget.style.boxShadow = ''
+                        }}
+                      >
+                        <span style={{ color: '#dc2626', flexShrink: 0 }}>
+                          <svg fill="currentColor" viewBox="0 0 24 24" width="24" height="24">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" />
+                            <path fill="currentColor" d="M16 13H8m0 4h8m-4-4H8" />
+                          </svg>
+                        </span>
+                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.file_name}</span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', flexShrink: 0 }}>{new Date(m.created_at).toLocaleDateString()}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ color: 'var(--text-muted)' }}>No materials for this course.</p>
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
+      {viewingMaterial && (
+        <DocumentViewer
+          url={viewingMaterial.url}
+          fileName={viewingMaterial.fileName}
+          onClose={() => setViewingMaterial(null)}
+        />
+      )}
       </main>
       </div>
   )

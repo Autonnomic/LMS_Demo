@@ -73,6 +73,14 @@ interface Submission {
   }
 }
 
+interface CourseMaterial {
+  id: string
+  course_id: string
+  file_name: string
+  file_path: string
+  created_at: string
+}
+
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export default function ProfessorCourseDetail() {
@@ -86,7 +94,7 @@ export default function ProfessorCourseDetail() {
   const [allStudents, setAllStudents] = useState<Student[]>([])
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0])
   const [attendanceRecords, setAttendanceRecords] = useState<Record<string, AttendanceRecord>>({})
-  const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'schedule' | 'students' | 'assignments'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'schedule' | 'students' | 'assignments' | 'materials'>('overview')
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
   const [newSchedule, setNewSchedule] = useState({
     day_of_week: 1,
@@ -107,6 +115,10 @@ export default function ProfessorCourseDetail() {
   const [gradeValue, setGradeValue] = useState<number>(0)
   const [feedbackText, setFeedbackText] = useState<string>('')
   const [viewingDocument, setViewingDocument] = useState<{ url: string; fileName: string } | null>(null)
+  const [materials, setMaterials] = useState<CourseMaterial[]>([])
+  const [materialsLoading, setMaterialsLoading] = useState(false)
+  const [materialUploading, setMaterialUploading] = useState(false)
+  const [materialError, setMaterialError] = useState<string | null>(null)
   const [newAssignment, setNewAssignment] = useState({
     title: '',
     description: '',
@@ -177,6 +189,86 @@ export default function ProfessorCourseDetail() {
       fetchAllStudents()
     }
   }, [activeTab, courseId])
+
+  useEffect(() => {
+    if (activeTab === 'materials' && courseId) {
+      fetchCourseMaterials()
+    }
+  }, [activeTab, courseId])
+
+  async function fetchCourseMaterials() {
+    if (!courseId) return
+    setMaterialsLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('course_materials')
+        .select('*')
+        .eq('course_id', courseId)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      setMaterials(data || [])
+    } catch (err) {
+      console.error('Error fetching course materials:', err)
+      setMaterials([])
+    } finally {
+      setMaterialsLoading(false)
+    }
+  }
+
+  function isPdfFile(file: File): boolean {
+    const name = (file.name || '').toLowerCase()
+    if (!name.endsWith('.pdf')) return false
+    return file.type === 'application/pdf' || file.type === ''
+  }
+
+  async function handleUploadMaterial(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !courseId) return
+    if (!isPdfFile(file)) {
+      setMaterialError('Only PDF files are allowed.')
+      return
+    }
+    setMaterialError(null)
+    setMaterialUploading(true)
+    try {
+      const ext = file.name.toLowerCase().endsWith('.pdf') ? '.pdf' : '.pdf'
+      const baseName = file.name.replace(/\.pdf$/i, '') || 'document'
+      const sanitized = baseName.replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 80)
+      const filePath = `${courseId}/${crypto.randomUUID()}_${sanitized}${ext}`
+      const { error: uploadError } = await supabase.storage
+        .from('course-materials')
+        .upload(filePath, file, { contentType: 'application/pdf', upsert: false })
+      if (uploadError) throw uploadError
+      const { error: insertError } = await supabase
+        .from('course_materials')
+        .insert({ course_id: courseId, file_name: file.name, file_path: filePath })
+      if (insertError) throw insertError
+      await fetchCourseMaterials()
+    } catch (err: any) {
+      setMaterialError(err?.message || 'Failed to upload. Only PDF is allowed.')
+    } finally {
+      setMaterialUploading(false)
+    }
+  }
+
+  function getMaterialPublicUrl(filePath: string): string {
+    const { data } = supabase.storage.from('course-materials').getPublicUrl(filePath)
+    return data.publicUrl
+  }
+
+  async function handleDeleteMaterial(m: CourseMaterial) {
+    if (!confirm(`Remove "${m.file_name}" from course materials?`)) return
+    try {
+      await supabase.storage.from('course-materials').remove([m.file_path])
+      const { error } = await supabase.from('course_materials').delete().eq('id', m.id)
+      if (error) throw error
+      await fetchCourseMaterials()
+    } catch (err) {
+      console.error('Error deleting material:', err)
+      alert('Failed to remove material.')
+    }
+  }
 
   async function fetchAllStudents() {
     try {
@@ -823,7 +915,6 @@ export default function ProfessorCourseDetail() {
   return (
     <main className="canvas-main-content">
         <div className="canvas-topbar">
-          <img src="/logo.png" alt="" className="canvas-topbar-logo-right" />
           <h1 className="canvas-topbar-title course-topbar-title">{course.code} - {course.name}</h1>
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {currentUserId && <Notifications userId={currentUserId} />}
@@ -863,6 +954,12 @@ export default function ProfessorCourseDetail() {
               onClick={() => setActiveTab('assignments')}
             >
               Assignments
+            </button>
+            <button
+              className={`professor-tab ${activeTab === 'materials' ? 'active' : ''}`}
+              onClick={() => setActiveTab('materials')}
+            >
+              Materials
             </button>
           </div>
 
@@ -1832,6 +1929,90 @@ export default function ProfessorCourseDetail() {
                     </div>
                   )}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Materials Tab */}
+          {activeTab === 'materials' && (
+            <div className="professor-tab-content">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+                <h3>Course materials (PDF only)</h3>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'var(--teal-bright)', color: 'white', borderRadius: '8px', cursor: materialUploading ? 'not-allowed' : 'pointer', fontWeight: 500, fontSize: '0.9rem' }}>
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={handleUploadMaterial}
+                    disabled={materialUploading}
+                    style={{ display: 'none' }}
+                  />
+                  {materialUploading ? (
+                    <span>Uploading…</span>
+                  ) : (
+                    <>
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="18" height="18">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      Upload PDF
+                    </>
+                  )}
+                </label>
+              </div>
+              {materialError && (
+                <div style={{ padding: '0.75rem 1rem', marginBottom: '1rem', background: '#fef2f2', color: '#b91c1c', borderRadius: '8px', fontSize: '0.9rem' }}>
+                  {materialError}
+                </div>
+              )}
+              {materialsLoading ? (
+                <p style={{ color: 'var(--text-muted)' }}>Loading materials…</p>
+              ) : materials.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {materials.map((m) => (
+                    <div
+                      key={m.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.75rem 1rem',
+                        background: 'white',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+                        <span style={{ color: '#dc2626', flexShrink: 0 }}>
+                          <svg fill="currentColor" viewBox="0 0 24 24" width="24" height="24">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" />
+                            <path fill="currentColor" d="M14 2v6h6M16 13H8m0 4h8m-4-4H8" />
+                          </svg>
+                        </span>
+                        <span style={{ fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.file_name}</span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', flexShrink: 0 }}>{new Date(m.created_at).toLocaleDateString()}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => setViewingDocument({ url: getMaterialPublicUrl(m.file_path), fileName: m.file_name })}
+                          className="btn-primary"
+                          style={{ padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
+                        >
+                          View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMaterial(m)}
+                          className="btn-secondary"
+                          style={{ padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color: 'var(--text-muted)' }}>No course materials yet. Upload PDFs above.</p>
               )}
             </div>
           )}
