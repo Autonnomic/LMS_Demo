@@ -1,5 +1,6 @@
+import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { createClient, getAuthUser } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/supabase/server'
 
 export async function POST(request: Request) {
   try {
@@ -7,9 +8,17 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    const supabase = await createClient()
 
-    const { error } = await supabase
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!serviceRoleKey) {
+      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+    }
+    const admin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      serviceRoleKey
+    )
+
+    const { error } = await admin
       .from('user_profiles')
       .update({ must_reset_password: false })
       .eq('id', user.id)

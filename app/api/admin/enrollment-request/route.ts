@@ -42,9 +42,30 @@ export async function POST(request: Request) {
     )
 
     if (action === 'accept') {
+      // When accepting, default professor_id to the primary professor for the course (if any)
+      const { data: registration } = await adminClient
+        .from('course_registrations')
+        .select('id, course_id, professor_id')
+        .eq('id', registrationId)
+        .single()
+
+      if (!registration) {
+        return NextResponse.json({ error: 'Registration not found' }, { status: 404 })
+      }
+
+      let professorId = registration.professor_id as string | null
+      if (!professorId) {
+        const { data: course } = await adminClient
+          .from('courses')
+          .select('professor_id')
+          .eq('id', registration.course_id)
+          .single()
+        professorId = course?.professor_id ?? null
+      }
+
       const { error: updateError } = await adminClient
         .from('course_registrations')
-        .update({ status: 'enrolled' })
+        .update({ status: 'enrolled', professor_id: professorId })
         .eq('id', registrationId)
 
       if (updateError) {

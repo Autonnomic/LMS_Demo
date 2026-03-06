@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import Groq from 'groq-sdk'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { getAuthUser } from '@/lib/supabase/server'
+import { getOllamaEmbedding } from '@/lib/ollama-embed'
 
 const MODEL_NAME = process.env.GROQ_MODEL_NAME || 'llama-3.1-8b-instant'
 const DAILY_QUESTION_LIMIT = 100
@@ -21,6 +22,7 @@ interface HistoryMessage {
 interface AssistantBody {
   question: string
   history?: HistoryMessage[]
+  courseId?: string
 }
 
 function isEducationalQuestion(question: string): boolean {
@@ -178,6 +180,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as AssistantBody
     const question = body?.question?.trim()
     const history = Array.isArray(body?.history) ? body.history : []
+    const preferredCourseId = body?.courseId ?? undefined
 
     if (!question) {
       return NextResponse.json(
@@ -245,7 +248,11 @@ export async function POST(request: Request) {
     let totalTokensAdded = 0
 
     if (mode === 'rag') {
-      answer = 'Rag is still under construction'
+      const ragResult = await answerWithRag(question, history, preferredCourseId, user.id, admin, request, groqClient)
+      answer = ragResult.answer
+      promptTokensAdded = ragResult.promptTokens
+      completionTokensAdded = ragResult.completionTokens
+      totalTokensAdded = ragResult.totalTokens
     } else {
       const result = await answerSimple(question, history, groqClient)
       answer = result.answer
@@ -297,6 +304,7 @@ async function routeQuestion(question: string, client: Groq): Promise<RouteMode>
   const lower = question.toLowerCase().trim()
 
   // Strong signals: user explicitly wants answer from course materials → RAG
+  if (/from\s+.+course/.test(lower) || /\b(in|from)\s+(my\s+)?(the\s+)?(.+\s+)?course\b/.test(lower)) return 'rag'
   const ragPhrases = [
     'course material',
     'course materials',
@@ -414,5 +422,121 @@ async function answerSimple(
     promptTokens: usage?.prompt_tokens ?? 0,
     completionTokens: usage?.completion_tokens ?? 0,
     totalTokens: usage?.total_tokens ?? 0,
+  }
+}
+
+/** RAG: resolve course, fetch relevant chunks, answer with Groq using that context. */
+async function answerWithRag(
+  question: string,
+  history: HistoryMessage[],
+  preferredCourseId: string | undefined,
+  userId: string,
+  admin: ReturnType<typeof createAdminClient>,
+  request: Request,
+  groqClient: Groq
+): Promise<{
+  answer: string
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}> {
+  // Use admin so we get enrollments even when session is only in Authorization header (not cookies)
+  const { data: enrollments } = await admin
+    .from('course_registrations')
+    .select('course_id, course:courses(id, name, code)')
+    .eq('student_id', userId)
+    .eq('status', 'enrolled')
+
+  const courses = (enrollments ?? [])
+    .map((e: { course_id: string; course: { id: string; name: string; code: string } | null }) =>
+      e.course ? { id: e.course.id, name: (e.course as { name: string }).name ?? '', code: (e.course as { code: string }).code ?? '' } : null
+    )
+    .filter(Boolean) as { id: string; name: string; code: string }[]
+
+  if (courses.length === 0) {
+    return {
+      answer: "You aren't enrolled in any courses, so I can't search course materials. Ask a general question for a direct answer.",
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+    }
+  }
+
+  let courseId = preferredCourseId && courses.some((c) => c.id === preferredCourseId) ? preferredCourseId : undefined
+  if (!courseId) {
+    const lower = question.toLowerCase()
+    const match = courses.find(
+      (c) =>
+        lower.includes(c.name.toLowerCase()) ||
+        lower.includes(c.code.toLowerCase()) ||
+        c.name.toLowerCase().split(/\s+/).some((w) => w.length > 2 && lower.includes(w))
+    )
+    courseId = match?.id ?? courses[0].id
+  }
+
+  let chunks: { content: string; main_keyword?: string }[]
+  try {
+    const queryEmbedding = await getOllamaEmbedding(question)
+    const { data, error } = await admin.rpc('match_document_chunks', {
+      query_embedding: queryEmbedding,
+      p_course_id: courseId,
+      match_limit: 12,
+    })
+    if (error) throw new Error(error.message)
+    chunks = Array.isArray(data) ? data : []
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Search failed'
+    return {
+      answer: `I couldn't search course materials (${msg}). Try asking without referring to a specific course for a direct answer.`,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+    }
+  }
+
+  if (!chunks.length) {
+    return {
+      answer: "I couldn't find relevant material in your course for that question. Make sure materials are indexed for search, or try rephrasing.",
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+    }
+  }
+
+  const context = chunks.map((c, i) => `[${i + 1}] ${(c.content ?? '').trim()}`).join('\n\n')
+  const systemContent = [
+    'You are a university AI helper. Your answer MUST be grounded in the following excerpts from the course materials.',
+    'Rules:',
+    '- Use the exact terminology, examples, and code from the excerpts. Do not replace them with generic explanations.',
+    '- Preserve precise meaning: do not mix distinct concepts (e.g. reading from a file vs writing/saving to a file; serializing vs deserializing). If the excerpt says read() returns strings when you read from a file, say that—do not say "when you want to save" for something that refers to reading.',
+    '- If the excerpts show code (e.g. json.dumps, json.load), function names, or definitions, include or paraphrase those in your answer.',
+    '- Prefer quoting or closely paraphrasing the material. Only add brief clarification if needed.',
+    '- If the excerpts do not contain enough information, say so first, then add a short general note.',
+    '- Do not invent content that is not in the excerpts. Keep the answer to 3–4 short paragraphs.',
+    '',
+    'Excerpts from course materials:',
+    context,
+  ].join('\n')
+
+  const limitedHistory = history.slice(-4)
+  const messages = [
+    { role: 'system' as const, content: systemContent },
+    ...limitedHistory.map((m) => ({ role: m.role, content: m.content })),
+    { role: 'user' as const, content: question },
+  ]
+
+  const completion = await groqClient.chat.completions.create({
+    model: MODEL_NAME,
+    messages,
+    temperature: 0.2,
+    max_tokens: 600,
+  })
+  const usage = completion.usage ?? {}
+
+  return {
+    answer: completion.choices[0]?.message?.content?.trim() ?? '',
+    promptTokens: usage.prompt_tokens ?? 0,
+    completionTokens: usage.completion_tokens ?? 0,
+    totalTokens: usage.total_tokens ?? 0,
   }
 }

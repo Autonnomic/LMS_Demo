@@ -1,18 +1,24 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { createClient as createServerClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/supabase/server'
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createServerClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const user = await getAuthUser(request)
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: myProfile } = await supabase
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!serviceRoleKey) {
+      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+    }
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      serviceRoleKey
+    )
+
+    const { data: myProfile } = await adminClient
       .from('user_profiles')
       .select('role')
       .eq('id', user.id)
@@ -32,7 +38,7 @@ export async function POST(request: Request) {
     }
 
     // Verify professor exists and has professor role
-    const { data: professor } = await supabase
+    const { data: professor } = await adminClient
       .from('user_profiles')
       .select('role')
       .eq('id', professorId)
@@ -45,27 +51,26 @@ export async function POST(request: Request) {
       )
     }
 
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    if (!serviceRoleKey) {
-      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-    }
+    // Add mapping in course_professors (many-to-many). Ignore if already exists.
+    const { error: linkError } = await adminClient
+      .from('course_professors')
+      .upsert(
+        { course_id: courseId, professor_id: professorId },
+        { onConflict: 'course_id,professor_id' }
+      )
 
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey
-    )
-
-    const { error: updateError } = await adminClient
-      .from('courses')
-      .update({ professor_id: professorId })
-      .eq('id', courseId)
-
-    if (updateError) {
+    if (linkError) {
       return NextResponse.json(
-        { error: updateError.message },
+        { error: linkError.message },
         { status: 400 }
       )
     }
+
+    // Optionally update primary professor on course so existing features keep working.
+    await adminClient
+      .from('courses')
+      .update({ professor_id: professorId })
+      .eq('id', courseId)
 
     return NextResponse.json({ ok: true })
   } catch (e) {

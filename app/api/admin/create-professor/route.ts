@@ -1,18 +1,25 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { createClient as createServerClient } from '@/lib/supabase/server'
+import { getAuthUser } from '@/lib/supabase/server'
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createServerClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const user = await getAuthUser(request)
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: myProfile } = await supabase
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    if (!serviceRoleKey) {
+      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
+    }
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      serviceRoleKey,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+
+    const { data: myProfile } = await adminClient
       .from('user_profiles')
       .select('role')
       .eq('id', user.id)
@@ -47,17 +54,6 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    if (!serviceRoleKey) {
-      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-    }
-
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    )
 
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email: email.trim().toLowerCase(),

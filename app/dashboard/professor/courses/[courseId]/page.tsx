@@ -119,6 +119,8 @@ export default function ProfessorCourseDetail() {
   const [materialsLoading, setMaterialsLoading] = useState(false)
   const [materialUploading, setMaterialUploading] = useState(false)
   const [materialError, setMaterialError] = useState<string | null>(null)
+  const [ragProcessMessage, setRagProcessMessage] = useState<string | null>(null)
+  const [indexingMaterialId, setIndexingMaterialId] = useState<string | null>(null)
   const [newAssignment, setNewAssignment] = useState({
     title: '',
     description: '',
@@ -230,6 +232,7 @@ export default function ProfessorCourseDetail() {
       return
     }
     setMaterialError(null)
+    setRagProcessMessage(null)
     setMaterialUploading(true)
     try {
       const ext = file.name.toLowerCase().endsWith('.pdf') ? '.pdf' : '.pdf'
@@ -240,11 +243,31 @@ export default function ProfessorCourseDetail() {
         .from('course-materials')
         .upload(filePath, file, { contentType: 'application/pdf', upsert: false })
       if (uploadError) throw uploadError
-      const { error: insertError } = await supabase
+      const { data: insertedMaterial, error: insertError } = await supabase
         .from('course_materials')
         .insert({ course_id: courseId, file_name: file.name, file_path: filePath })
+        .select('id')
+        .single()
       if (insertError) throw insertError
       await fetchCourseMaterials()
+      if (insertedMaterial?.id) {
+        setRagProcessMessage('Processing PDF for search…')
+        const { data: { session } } = await supabase.auth.getSession()
+        fetch('/api/course-materials/process', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }) },
+          body: JSON.stringify({ materialId: insertedMaterial.id }),
+        })
+          .then((r) => r.json())
+          .then((body) => {
+            if (body.error) {
+              setRagProcessMessage(`RAG failed: ${body.error}`)
+            } else {
+              setRagProcessMessage(body.chunks ? `Ready: ${body.chunks} chunks indexed for search.` : null)
+            }
+          })
+          .catch((err) => setRagProcessMessage(`RAG failed: ${err?.message || 'request failed'}`))
+      }
     } catch (err: any) {
       setMaterialError(err?.message || 'Failed to upload. Only PDF is allowed.')
     } finally {
@@ -255,6 +278,29 @@ export default function ProfessorCourseDetail() {
   function getMaterialPublicUrl(filePath: string): string {
     const { data } = supabase.storage.from('course-materials').getPublicUrl(filePath)
     return data.publicUrl
+  }
+
+  async function handleIndexForSearch(m: CourseMaterial) {
+    setRagProcessMessage(null)
+    setIndexingMaterialId(m.id)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/course-materials/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }) },
+        body: JSON.stringify({ materialId: m.id }),
+      })
+      const body = await res.json()
+      if (!res.ok) {
+        setRagProcessMessage(`RAG failed: ${body.error || res.statusText}`)
+        return
+      }
+      setRagProcessMessage(body.chunks != null ? `Ready: ${body.chunks} chunks indexed for search.` : 'Indexed.')
+    } catch (err: any) {
+      setRagProcessMessage(`RAG failed: ${err?.message || 'request failed'}`)
+    } finally {
+      setIndexingMaterialId(null)
+    }
   }
 
   async function handleDeleteMaterial(m: CourseMaterial) {
@@ -301,6 +347,7 @@ export default function ProfessorCourseDetail() {
           .select(`
             id,
             registered_at,
+            professor_id,
             student:user_profiles (
               id,
               first_name,
@@ -317,7 +364,7 @@ export default function ProfessorCourseDetail() {
         const enrolled = studentsRes.data.map((reg: any) => ({
           ...reg.student,
           registration_id: reg.id,
-          registered_at: reg.registered_at
+          registered_at: reg.registered_at,
         }))
         setEnrolledStudents(enrolled)
       }
@@ -807,6 +854,7 @@ export default function ProfessorCourseDetail() {
         .insert({
           student_id: studentId,
           course_id: courseId,
+          professor_id: currentUserId,
           status: 'enrolled'
         })
 
@@ -1936,7 +1984,7 @@ export default function ProfessorCourseDetail() {
           {/* Materials Tab */}
           {activeTab === 'materials' && (
             <div className="professor-tab-content">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <h3>Course materials (PDF only)</h3>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'var(--teal-bright)', color: 'white', borderRadius: '8px', cursor: materialUploading ? 'not-allowed' : 'pointer', fontWeight: 500, fontSize: '0.9rem' }}>
                   <input
@@ -1958,9 +2006,17 @@ export default function ProfessorCourseDetail() {
                   )}
                 </label>
               </div>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                After uploading, click <strong>Index for search</strong> to enable semantic search over the PDF (requires Ollama running with nomic-embed-text).
+              </p>
               {materialError && (
                 <div style={{ padding: '0.75rem 1rem', marginBottom: '1rem', background: '#fef2f2', color: '#b91c1c', borderRadius: '8px', fontSize: '0.9rem' }}>
                   {materialError}
+                </div>
+              )}
+              {ragProcessMessage && (
+                <div style={{ padding: '0.75rem 1rem', marginBottom: '1rem', background: ragProcessMessage.startsWith('RAG failed') ? '#fef2f2' : '#f0fdf4', color: ragProcessMessage.startsWith('RAG failed') ? '#b91c1c' : '#166534', borderRadius: '8px', fontSize: '0.9rem' }}>
+                  {ragProcessMessage}
                 </div>
               )}
               {materialsLoading ? (
@@ -1991,6 +2047,16 @@ export default function ProfessorCourseDetail() {
                         <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', flexShrink: 0 }}>{new Date(m.created_at).toLocaleDateString()}</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => handleIndexForSearch(m)}
+                          disabled={indexingMaterialId === m.id}
+                          className="btn-secondary"
+                          style={{ padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
+                          title="Extract text and index for semantic search (RAG)"
+                        >
+                          {indexingMaterialId === m.id ? 'Indexing…' : 'Index for search'}
+                        </button>
                         <button
                           type="button"
                           onClick={() => setViewingDocument({ url: getMaterialPublicUrl(m.file_path), fileName: m.file_name })}
