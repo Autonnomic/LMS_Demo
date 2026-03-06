@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -56,29 +56,23 @@ interface Assignment {
   submission_count?: number
 }
 
-interface Submission {
-  id: string
-  student_id: string
-  submitted_at: string
-  file_url: string | null
-  file_name: string | null
-  submission_text: string | null
-  status: string
-  grade: number | null
-  feedback: string | null
-  student: {
-    first_name: string | null
-    last_name: string | null
-    email: string | null
-  }
-}
-
 interface CourseMaterial {
   id: string
   course_id: string
   file_name: string
   file_path: string
   created_at: string
+}
+
+interface CourseGrade {
+  id: string
+  student_id: string
+  course_id: string
+  assignment_name: string
+  grade: number
+  max_grade: number | null
+  assignment_type: string | null
+  graded_at: string | null
 }
 
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -94,7 +88,7 @@ export default function ProfessorCourseDetail() {
   const [allStudents, setAllStudents] = useState<Student[]>([])
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0])
   const [attendanceRecords, setAttendanceRecords] = useState<Record<string, AttendanceRecord>>({})
-  const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'schedule' | 'students' | 'assignments' | 'materials'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'schedule' | 'students' | 'assignments' | 'grades' | 'materials'>('overview')
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
   const [newSchedule, setNewSchedule] = useState({
     day_of_week: 1,
@@ -108,12 +102,6 @@ export default function ProfessorCourseDetail() {
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null)
   const [showAssignmentForm, setShowAssignmentForm] = useState(false)
-  const [viewingSubmissions, setViewingSubmissions] = useState<string | null>(null)
-  const [submissions, setSubmissions] = useState<Submission[]>([])
-  const submissionsListRef = useRef<HTMLDivElement>(null)
-  const [gradingSubmission, setGradingSubmission] = useState<string | null>(null)
-  const [gradeValue, setGradeValue] = useState<number>(0)
-  const [feedbackText, setFeedbackText] = useState<string>('')
   const [viewingDocument, setViewingDocument] = useState<{ url: string; fileName: string } | null>(null)
   const [materials, setMaterials] = useState<CourseMaterial[]>([])
   const [materialsLoading, setMaterialsLoading] = useState(false)
@@ -130,6 +118,7 @@ export default function ProfessorCourseDetail() {
     assignment_type: '',
     instructions: ''
   })
+  const [courseGrades, setCourseGrades] = useState<CourseGrade[]>([])
   const [assignmentTemplates, setAssignmentTemplates] = useState([
     { name: 'Homework', type: 'homework', points: 100, description: 'Weekly homework assignment' },
     { name: 'Quiz', type: 'quiz', points: 50, description: 'Short quiz assessment' },
@@ -167,7 +156,8 @@ export default function ProfessorCourseDetail() {
         setCurrentUserId(user.id)
         await Promise.all([
           fetchCourseData(),
-          fetchAssignments()
+          fetchAssignments(),
+          fetchCourseGrades()
         ])
       } catch (error) {
         console.error('Error loading course page:', error)
@@ -195,6 +185,14 @@ export default function ProfessorCourseDetail() {
   useEffect(() => {
     if (activeTab === 'materials' && courseId) {
       fetchCourseMaterials()
+    }
+  }, [activeTab, courseId])
+
+  // Refetch grades when opening Grades tab so it shows latest data after grading in Assignments tab
+  useEffect(() => {
+    if (activeTab === 'grades' && courseId) {
+      fetchCourseGrades()
+      fetchAssignments()
     }
   }, [activeTab, courseId])
 
@@ -334,7 +332,7 @@ export default function ProfessorCourseDetail() {
 
   async function fetchCourseData() {
     try {
-      const [courseRes, scheduleRes, studentsRes] = await Promise.all([
+      const [courseRes, scheduleRes, enrolledRes] = await Promise.all([
         supabase.from('courses').select('*').eq('id', courseId).single(),
         supabase
           .from('course_schedules')
@@ -342,35 +340,39 @@ export default function ProfessorCourseDetail() {
           .eq('course_id', courseId)
           .order('day_of_week', { ascending: true })
           .order('start_time', { ascending: true }),
-        supabase
-          .from('course_registrations')
-          .select(`
-            id,
-            registered_at,
-            professor_id,
-            student:user_profiles (
-              id,
-              first_name,
-              last_name,
-              email
-            )
-          `)
-          .eq('course_id', courseId)
-          .eq('status', 'enrolled')
+        (async () => {
+          const { data: { session } } = await supabase.auth.getSession()
+          const headers: Record<string, string> = {}
+          if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+          const res = await fetch(`/api/professor/courses/${courseId}/enrolled`, { credentials: 'include', headers })
+          if (!res.ok) return null
+          const json = await res.json().catch(() => null)
+          return json?.enrolled ?? null
+        })()
       ])
       if (courseRes.data) setCourse(courseRes.data)
       if (scheduleRes.data) setSchedule(scheduleRes.data)
-      if (studentsRes.data) {
-        const enrolled = studentsRes.data.map((reg: any) => ({
-          ...reg.student,
-          registration_id: reg.id,
-          registered_at: reg.registered_at,
-        }))
-        setEnrolledStudents(enrolled)
+      if (Array.isArray(enrolledRes)) {
+        setEnrolledStudents(enrolledRes as EnrolledStudent[])
       }
       await fetchAttendanceForDate(attendanceDate)
     } catch (error) {
       console.error('Error fetching course data:', error)
+    }
+  }
+
+  async function fetchCourseGrades() {
+    try {
+      const { data, error } = await supabase
+        .from('grades')
+        .select('*')
+        .eq('course_id', courseId)
+        .order('assignment_name')
+      if (error) throw error
+      setCourseGrades((data || []) as CourseGrade[])
+    } catch (error) {
+      console.error('Error fetching grades:', error)
+      setCourseGrades([])
     }
   }
 
@@ -584,140 +586,6 @@ export default function ProfessorCourseDetail() {
     setShowAssignmentForm(true)
   }
 
-  async function fetchSubmissions(assignmentId: string) {
-    try {
-      const { data: submissionsData } = await supabase
-        .from('assignment_submissions')
-        .select(`
-          *,
-          student:user_profiles (
-            first_name,
-            last_name,
-            email
-          )
-        `)
-        .eq('assignment_id', assignmentId)
-        .order('submitted_at', { ascending: false })
-
-      if (submissionsData) {
-        const submissionsList = submissionsData.map((s: any) => ({
-          ...s,
-          student: s.student
-        })) as Submission[]
-        setSubmissions(submissionsList)
-        setViewingSubmissions(assignmentId)
-      }
-    } catch (error) {
-      console.error('Error fetching submissions:', error)
-      alert('Failed to load submissions')
-    }
-  }
-
-  useEffect(() => {
-    if (viewingSubmissions && submissionsListRef.current) {
-      const el = submissionsListRef.current
-      requestAnimationFrame(() => {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      })
-    }
-  }, [viewingSubmissions])
-
-  async function handleGradeSubmission(submissionId: string, assignment: Assignment) {
-    try {
-      const { error } = await supabase
-        .from('assignment_submissions')
-        .update({
-          grade: gradeValue,
-          feedback: feedbackText || null
-        })
-        .eq('id', submissionId)
-
-      if (error) throw error
-
-      // Also create/update grade entry
-      const submission = submissions.find(s => s.id === submissionId)
-      if (submission) {
-        // Check if grade already exists
-        const { data: existingGrade } = await supabase
-          .from('grades')
-          .select('id')
-          .eq('student_id', submission.student_id)
-          .eq('course_id', courseId)
-          .eq('assignment_name', assignment.title)
-          .single()
-
-        if (existingGrade) {
-          // Update existing grade
-          await supabase
-            .from('grades')
-            .update({
-              grade: gradeValue,
-              max_grade: assignment.max_points
-            })
-            .eq('id', existingGrade.id)
-        } else {
-          // Insert new grade
-          await supabase
-            .from('grades')
-            .insert({
-              student_id: submission.student_id,
-              course_id: courseId,
-              assignment_name: assignment.title,
-              grade: gradeValue,
-              max_grade: assignment.max_points,
-              assignment_type: assignment.assignment_type || null
-            })
-        }
-      }
-
-      setGradingSubmission(null)
-      setGradeValue(0)
-      setFeedbackText('')
-      await fetchSubmissions(assignment.id)
-      
-      // Create notification for student about grade
-      try {
-        const submission = submissions.find(s => s.id === submissionId)
-        if (submission) {
-          // Get session token for authentication
-          const { data: { session } } = await supabase.auth.getSession()
-          
-          const response = await fetch('/api/notifications/create', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              ...(session?.access_token && { 'Authorization': `Bearer ${session.access_token}` })
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              userId: submission.student_id,
-              title: 'Assignment Graded',
-              message: `Your assignment "${assignment.title}" has been graded. Grade: ${gradeValue} / ${assignment.max_points}`,
-              type: 'grade',
-              relatedId: assignment.id
-            })
-          })
-          if (!response.ok) {
-            const error = await response.json()
-            console.error('Failed to create grade notification:', error)
-          }
-        }
-      } catch (notifError) {
-        console.error('Error creating grade notification:', notifError)
-        // Don't fail grading if notification fails
-      }
-    } catch (error) {
-      console.error('Error grading submission:', error)
-      alert('Failed to grade submission')
-    }
-  }
-
-  function startGrading(submission: Submission, assignment: Assignment) {
-    setGradingSubmission(submission.id)
-    setGradeValue(submission.grade || 0)
-    setFeedbackText(submission.feedback || '')
-  }
-
   async function fetchAttendanceForDate(date: string) {
     const { data } = await supabase
       .from('attendance')
@@ -912,8 +780,7 @@ export default function ProfessorCourseDetail() {
     return (
       <main className="canvas-main-content">
         <div className="canvas-topbar">
-          <img src="/logo.png" alt="" className="canvas-topbar-logo-right" />
-          <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginLeft: 'auto' }}>
             <div className="skeleton skeleton-avatar" />
             <div className="canvas-user-menu-wrapper">
               <div className="canvas-user-menu canvas-user-menu-trigger">
@@ -1004,6 +871,12 @@ export default function ProfessorCourseDetail() {
               Assignments
             </button>
             <button
+              className={`professor-tab ${activeTab === 'grades' ? 'active' : ''}`}
+              onClick={() => setActiveTab('grades')}
+            >
+              Grades
+            </button>
+            <button
               className={`professor-tab ${activeTab === 'materials' ? 'active' : ''}`}
               onClick={() => setActiveTab('materials')}
             >
@@ -1053,6 +926,102 @@ export default function ProfessorCourseDetail() {
                       </div>
                     ) : (
                       <p style={{ color: 'var(--text-muted)' }}>No schedule set</p>
+                    )}
+                  </div>
+
+                  {/* Grades & Analytics (overview) */}
+                  <div className="course-info-card" style={{ marginTop: '1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <h3>Grades &amp; Analytics</h3>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('grades')}
+                        style={{
+                          padding: '0.4rem 0.75rem',
+                          fontSize: '0.875rem',
+                          fontWeight: 500,
+                          color: 'var(--teal-bright)',
+                          background: 'transparent',
+                          border: '1px solid var(--teal-bright)',
+                          borderRadius: '6px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        View full grades →
+                      </button>
+                    </div>
+                    {(() => {
+                      const totalPoints = courseGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
+                      const earnedPoints = courseGrades.reduce((s, g) => s + Number(g.grade), 0)
+                      const classAvgPct = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : null
+                      // Count only current assignments that have at least one grade (matches table columns)
+                      const assignmentsGradedCount = assignments.filter((a) =>
+                        courseGrades.some((g) => g.assignment_name === a.title)
+                      ).length
+                      const perStudentPct: number[] = []
+                      enrolledStudents.forEach((stu) => {
+                        const stuGrades = courseGrades.filter((g) => g.student_id === stu.id)
+                        const stuTotal = stuGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
+                        const stuEarned = stuGrades.reduce((s, g) => s + Number(g.grade), 0)
+                        if (stuTotal > 0) perStudentPct.push((stuEarned / stuTotal) * 100)
+                      })
+                      const dist = { A: 0, B: 0, C: 0, D: 0, F: 0 }
+                      perStudentPct.forEach((p) => {
+                        if (p >= 90) dist.A++
+                        else if (p >= 80) dist.B++
+                        else if (p >= 70) dist.C++
+                        else if (p >= 60) dist.D++
+                        else dist.F++
+                      })
+                      const studentsByGradeCount = [...enrolledStudents]
+                        .map((stu) => {
+                          const stuGrades = courseGrades.filter((g) => g.student_id === stu.id)
+                          const total = stuGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
+                          const earned = stuGrades.reduce((s, g) => s + Number(g.grade), 0)
+                          const pct = total > 0 ? Math.round((earned / total) * 100) : null
+                          return { student: stu, count: stuGrades.length, pct }
+                        })
+                        .sort((a, b) => a.count - b.count)
+                      const studentsWithFewerGrades = studentsByGradeCount.slice(0, 10)
+                      return (
+                        <>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem' }}>
+                            <div style={{ padding: '0.75rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>Class average</div>
+                              <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text)' }}>{classAvgPct != null ? `${classAvgPct}%` : '—'}</div>
+                            </div>
+                            <div style={{ padding: '0.75rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>Assignments graded</div>
+                              <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text)' }}>{assignmentsGradedCount}</div>
+                            </div>
+                            <div style={{ padding: '0.75rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Distribution</div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', fontSize: '0.75rem' }}>
+                                <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.2)', color: '#059669' }}>A ({dist.A})</span>
+                                <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(59,130,246,0.2)', color: '#2563eb' }}>B ({dist.B})</span>
+                                <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.2)', color: '#d97706' }}>C ({dist.C})</span>
+                                <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(249,115,22,0.2)', color: '#ea580c' }}>D ({dist.D})</span>
+                                <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.2)', color: '#dc2626' }}>F ({dist.F})</span>
+                              </div>
+                            </div>
+                          </div>
+                          {enrolledStudents.length > 0 && (
+                            <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Students with fewer grades (need attention)</div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.875rem' }}>
+                                {studentsWithFewerGrades.map(({ student, pct }) => (
+                                  <span key={student.id} style={{ padding: '4px 8px', background: 'var(--surface)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                                    {[student.first_name, student.last_name].filter(Boolean).join(' ') || student.email || 'Unknown'} ({pct != null ? `${pct}%` : '—'})
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )
+                    })()}
+                    {courseGrades.length === 0 && assignments.length === 0 && (
+                      <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Create assignments and grade submissions to see analytics here.</p>
                     )}
                   </div>
                 </div>
@@ -1648,7 +1617,7 @@ export default function ProfessorCourseDetail() {
                         <th>Type</th>
                         <th>Due Date</th>
                         <th>Points</th>
-                        <th>Submissions</th>
+                        <th>Submitted</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
@@ -1691,27 +1660,13 @@ export default function ProfessorCourseDetail() {
                               </div>
                             </td>
                             <td>{assignment.max_points}</td>
-                            <td>
-                              <button
-                                onClick={() => fetchSubmissions(assignment.id)}
-                                style={{
-                                  padding: '0.25rem 0.75rem',
-                                  background: assignment.submission_count && assignment.submission_count > 0 ? 'var(--teal-bright)' : '#9ca3af',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 600
-                                }}
-                              >
-                                {assignment.submission_count || 0} Submission{(assignment.submission_count || 0) !== 1 ? 's' : ''}
-                              </button>
+                            <td style={{ fontSize: '0.875rem', color: 'var(--text)' }}>
+                              {assignment.submission_count ?? 0} / {enrolledStudents.length}
                             </td>
                             <td>
                               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                <button
-                                  onClick={() => fetchSubmissions(assignment.id)}
+                                <Link
+                                  href={`/dashboard/professor/courses/${courseId}/assignments/${assignment.id}/submissions`}
                                   style={{
                                     padding: '0.25rem 0.75rem',
                                     background: 'var(--teal-bright)',
@@ -1719,11 +1674,13 @@ export default function ProfessorCourseDetail() {
                                     border: 'none',
                                     borderRadius: '4px',
                                     cursor: 'pointer',
-                                    fontSize: '0.75rem'
+                                    fontSize: '0.75rem',
+                                    textDecoration: 'none',
+                                    display: 'inline-block'
                                   }}
                                 >
-                                  View
-                                </button>
+                                  View submissions
+                                </Link>
                                 <button
                                   onClick={() => startEditAssignment(assignment)}
                                   style={{
@@ -1773,210 +1730,169 @@ export default function ProfessorCourseDetail() {
                 </div>
               )}
 
-              {/* Submissions View */}
-              {viewingSubmissions && (
-                <div ref={submissionsListRef} style={{ marginTop: '2rem', padding: '1.5rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                    <h3>
-                      Submissions for: {assignments.find(a => a.id === viewingSubmissions)?.title}
-                    </h3>
-                    <button
-                      onClick={() => {
-                        setViewingSubmissions(null)
-                        setSubmissions([])
-                      }}
-                      className="btn-secondary"
-                      style={{ padding: '0.5rem 1rem' }}
-                    >
-                      Close
-                    </button>
-                  </div>
+            </div>
+          )}
 
-                  {submissions.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                      {submissions.map((submission) => {
-                        const assignment = assignments.find(a => a.id === viewingSubmissions)
-                        const isGrading = gradingSubmission === submission.id
+          {/* Grades & Analytics Tab */}
+          {activeTab === 'grades' && (
+            <div className="professor-tab-content">
+              <h3 style={{ marginBottom: '1.5rem', color: 'var(--navy-dark)' }}>Grades &amp; Analytics</h3>
+
+              {/* Analytics cards */}
+              {(() => {
+                const totalPoints = courseGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
+                const earnedPoints = courseGrades.reduce((s, g) => s + Number(g.grade), 0)
+                const classAvgPct = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0
+                // Count only current assignments that have at least one grade (matches table columns)
+                const assignmentsGradedCount = assignments.filter((a) =>
+                  courseGrades.some((g) => g.assignment_name === a.title)
+                ).length
+                const perStudentPct: number[] = []
+                enrolledStudents.forEach((stu) => {
+                  const stuGrades = courseGrades.filter((g) => g.student_id === stu.id)
+                  const stuTotal = stuGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
+                  const stuEarned = stuGrades.reduce((s, g) => s + Number(g.grade), 0)
+                  if (stuTotal > 0) perStudentPct.push((stuEarned / stuTotal) * 100)
+                })
+                const dist = { A: 0, B: 0, C: 0, D: 0, F: 0 }
+                perStudentPct.forEach((p) => {
+                  if (p >= 90) dist.A++
+                  else if (p >= 80) dist.B++
+                  else if (p >= 70) dist.C++
+                  else if (p >= 60) dist.D++
+                  else dist.F++
+                })
+                const studentsByGradeCount = [...enrolledStudents]
+                  .map((stu) => {
+                    const stuGrades = courseGrades.filter((g) => g.student_id === stu.id)
+                    const total = stuGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
+                    const earned = stuGrades.reduce((s, g) => s + Number(g.grade), 0)
+                    const pct = total > 0 ? Math.round((earned / total) * 100) : null
+                    return { student: stu, count: stuGrades.length, pct }
+                  })
+                  .sort((a, b) => a.count - b.count)
+                const studentsWithFewerGrades = studentsByGradeCount.slice(0, 15)
+                return (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                      <div style={{ padding: '1rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Class average</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text)' }}>{classAvgPct}%</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>{earnedPoints.toFixed(0)} / {totalPoints.toFixed(0)} pts</div>
+                      </div>
+                      <div style={{ padding: '1rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Assignments graded</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text)' }}>{assignmentsGradedCount}</div>
+                      </div>
+                      <div style={{ padding: '1rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Grade distribution</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '0.8rem' }}>
+                          <span style={{ padding: '2px 8px', borderRadius: 4, background: 'rgba(16,185,129,0.2)', color: '#059669' }}>A 90+ ({dist.A})</span>
+                          <span style={{ padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.2)', color: '#2563eb' }}>B 80–89 ({dist.B})</span>
+                          <span style={{ padding: '2px 8px', borderRadius: 4, background: 'rgba(245,158,11,0.2)', color: '#d97706' }}>C 70–79 ({dist.C})</span>
+                          <span style={{ padding: '2px 8px', borderRadius: 4, background: 'rgba(249,115,22,0.2)', color: '#ea580c' }}>D 60–69 ({dist.D})</span>
+                          <span style={{ padding: '2px 8px', borderRadius: 4, background: 'rgba(239,68,68,0.2)', color: '#dc2626' }}>F &lt;60 ({dist.F})</span>
+                        </div>
+                      </div>
+                    </div>
+                    {enrolledStudents.length > 0 && (
+                      <div style={{ marginBottom: '2rem', padding: '1rem', background: 'var(--surface-hover)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Students with fewer grades (need attention)</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '0.9rem' }}>
+                          {studentsWithFewerGrades.map(({ student, pct }) => (
+                            <span key={student.id} style={{ padding: '6px 10px', background: 'var(--surface)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                              {[student.first_name, student.last_name].filter(Boolean).join(' ') || student.email || 'Unknown'} ({pct != null ? `${pct}%` : '—'})
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
+
+              {/* Grades table */}
+              <div style={{ overflowX: 'auto' }}>
+                <table className="table" style={{ minWidth: 480 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>Student</th>
+                      {assignments.map((a) => (
+                        <th key={a.id} style={{ textAlign: 'center', whiteSpace: 'nowrap', maxWidth: 120 }} title={a.title}>
+                          {a.title.length > 18 ? a.title.slice(0, 16) + '…' : a.title}
+                        </th>
+                      ))}
+                      <th style={{ textAlign: 'center', whiteSpace: 'nowrap', fontWeight: 600 }}>Average</th>
+                    </tr>
+                    {/* Class average row */}
+                    {assignments.length > 0 && (
+                      <tr style={{ background: 'var(--surface-hover)', fontSize: '0.85rem' }}>
+                        <td style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Class avg</td>
+                        {assignments.map((a) => {
+                          const gs = courseGrades.filter((g) => g.assignment_name === a.title)
+                          const total = gs.reduce((s, g) => s + (g.max_grade || 0), 0)
+                          const earned = gs.reduce((s, g) => s + Number(g.grade), 0)
+                          const pct = total > 0 ? Math.round((earned / total) * 100) : null
+                          return (
+                            <td key={a.id} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                              {pct != null ? `${pct}%` : '—'}
+                            </td>
+                          )
+                        })}
+                        <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontWeight: 600 }}>
+                          {courseGrades.length > 0
+                            ? `${Math.round((courseGrades.reduce((s, g) => s + Number(g.grade), 0) / courseGrades.reduce((s, g) => s + (g.max_grade || 0), 0)) * 100)}%`
+                            : '—'}
+                        </td>
+                      </tr>
+                    )}
+                  </thead>
+                  <tbody>
+                    {enrolledStudents.length === 0 ? (
+                      <tr>
+                        <td colSpan={(assignments.length + 2)} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
+                          No enrolled students
+                        </td>
+                      </tr>
+                    ) : (
+                      enrolledStudents.map((student) => {
+                        const stuGrades = courseGrades.filter((g) => g.student_id === student.id)
+                        let totalPoints = 0
+                        let earnedPoints = 0
+                        stuGrades.forEach((g) => {
+                          totalPoints += g.max_grade || 0
+                          earnedPoints += Number(g.grade)
+                        })
+                        const avgPct = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : null
                         return (
-                          <div
-                            key={submission.id}
-                            style={{
-                              padding: '1.5rem',
-                              background: '#f9fafb',
-                              borderRadius: '8px',
-                              border: '1px solid #e5e7eb'
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                              <div>
-                                <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text)', marginBottom: '0.25rem' }}>
-                                  {submission.student.first_name} {submission.student.last_name}
-                                </div>
-                                <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                                  {submission.student.email}
-                                </div>
-                                <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                                  Submitted: {new Date(submission.submitted_at).toLocaleString()}
-                                </div>
-                              </div>
-                              {submission.grade !== null && (
-                                <div style={{ textAlign: 'right' }}>
-                                  <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                                    Grade
-                                  </div>
-                                  <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#10b981' }}>
-                                    {submission.grade} / {assignment?.max_points || 0}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            {submission.submission_text && (
-                              <div style={{ marginBottom: '1rem', padding: '1rem', background: 'white', borderRadius: '6px' }}>
-                                <div style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text)' }}>
-                                  Submission Text:
-                                </div>
-                                <div style={{ color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-                                  {submission.submission_text}
-                                </div>
-                              </div>
-                            )}
-
-                            {submission.file_name && (
-                              <div style={{ marginBottom: '1rem' }}>
-                                <div style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text)' }}>
-                                  Submitted File:
-                                </div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-                                  <button
-                                    type="button"
-                                    onClick={() => submission.file_url && setViewingDocument({ url: submission.file_url, fileName: submission.file_name || 'document' })}
-                                    disabled={!submission.file_url}
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.5rem',
-                                      padding: '0.5rem 1rem',
-                                      background: 'var(--teal-bright)',
-                                      color: 'white',
-                                      border: 'none',
-                                      borderRadius: '6px',
-                                      fontSize: '0.875rem',
-                                      cursor: submission.file_url ? 'pointer' : 'not-allowed'
-                                    }}
-                                  >
-                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                    </svg>
-                                    View
-                                  </button>
-                                  <a
-                                    href={submission.file_url || '#'}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.5rem',
-                                      padding: '0.5rem 1rem',
-                                      background: 'var(--bg)',
-                                      color: 'var(--text)',
-                                      textDecoration: 'none',
-                                      borderRadius: '6px',
-                                      fontSize: '0.875rem',
-                                      border: '1px solid var(--border)'
-                                    }}
-                                  >
-                                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    {submission.file_name}
-                                  </a>
-                                </div>
-                              </div>
-                            )}
-
-                            {submission.feedback && (
-                              <div style={{ marginBottom: '1rem', padding: '1rem', background: '#fef3c7', borderRadius: '6px' }}>
-                                <div style={{ fontSize: '0.875rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text)' }}>
-                                  Feedback:
-                                </div>
-                                <div style={{ color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-                                  {submission.feedback}
-                                </div>
-                              </div>
-                            )}
-
-                            {isGrading ? (
-                              <div style={{ padding: '1rem', background: 'white', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
-                                <div style={{ marginBottom: '1rem' }}>
-                                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
-                                    Grade (out of {assignment?.max_points || 0})
-                                  </label>
-                                  <input
-                                    type="number"
-                                    value={gradeValue}
-                                    onChange={(e) => setGradeValue(parseFloat(e.target.value) || 0)}
-                                    className="form-control"
-                                    min="0"
-                                    max={assignment?.max_points || 100}
-                                    step="0.1"
-                                    style={{ maxWidth: '200px' }}
-                                  />
-                                </div>
-                                <div style={{ marginBottom: '1rem' }}>
-                                  <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
-                                    Feedback
-                                  </label>
-                                  <textarea
-                                    value={feedbackText}
-                                    onChange={(e) => setFeedbackText(e.target.value)}
-                                    className="form-control"
-                                    rows={4}
-                                    placeholder="Provide feedback to the student..."
-                                  />
-                                </div>
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                  <button
-                                    onClick={() => assignment && handleGradeSubmission(submission.id, assignment)}
-                                    className="btn-primary"
-                                    style={{ padding: '0.5rem 1rem' }}
-                                  >
-                                    Save Grade
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setGradingSubmission(null)
-                                      setGradeValue(0)
-                                      setFeedbackText('')
-                                    }}
-                                    className="btn-secondary"
-                                    style={{ padding: '0.5rem 1rem' }}
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => assignment && startGrading(submission, assignment)}
-                                className="btn-primary"
-                                style={{ padding: '0.5rem 1rem' }}
-                              >
-                                {submission.grade !== null ? 'Update Grade' : 'Grade Submission'}
-                              </button>
-                            )}
-                          </div>
+                          <tr key={student.id}>
+                            <td style={{ whiteSpace: 'nowrap' }}>
+                              {[student.first_name, student.last_name].filter(Boolean).join(' ') || student.email || '—'}
+                            </td>
+                            {assignments.map((a) => {
+                              const g = stuGrades.find((gr) => gr.assignment_name === a.title)
+                              if (!g) return <td key={a.id} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>—</td>
+                              const max = g.max_grade ?? a.max_points
+                              return (
+                                <td key={a.id} style={{ textAlign: 'center' }}>
+                                  {Number(g.grade)} / {max}
+                                </td>
+                              )
+                            })}
+                            <td style={{ textAlign: 'center', fontWeight: 600 }}>
+                              {avgPct != null ? `${avgPct}%` : '—'}
+                            </td>
+                          </tr>
                         )
-                      })}
-                    </div>
-                  ) : (
-                    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                      <p>No submissions yet for this assignment.</p>
-                    </div>
-                  )}
-                </div>
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {assignments.length === 0 && (
+                <p style={{ color: 'var(--text-muted)', marginTop: '1rem' }}>
+                  Create assignments and grade submissions in the Assignments tab to see grades and analytics here.
+                </p>
               )}
             </div>
           )}

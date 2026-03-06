@@ -115,7 +115,7 @@ export default function ProfessorLayout({
         <aside className="canvas-sidebar">
           <div className="canvas-sidebar-header">
             <div className="sidebar-logo-container">
-              <div className="skeleton skeleton-avatar" />
+              <AutonnomicLogo />
             </div>
           </div>
           <nav className="canvas-sidebar-nav">
@@ -200,8 +200,8 @@ export default function ProfessorLayout({
             </span>
           </Link>
           <Link
-            href="/dashboard/professor/ai-helper"
-            className={`canvas-nav-item ${pathname === '/dashboard/professor/ai-helper' ? 'active' : ''}`}
+            href="/dashboard/ai-helper"
+            className={`canvas-nav-item ${pathname === '/dashboard/ai-helper' ? 'active' : ''}`}
           >
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -222,6 +222,21 @@ export default function ProfessorLayout({
             </svg>
             <span className="nav-text">Profile</span>
           </Link>
+          <button
+            type="button"
+            onClick={async () => {
+              await supabase.auth.signOut()
+              router.push('/')
+              router.refresh()
+            }}
+            className="canvas-nav-item canvas-nav-item-logout"
+            style={{ marginTop: 'auto', border: 'none', background: 'none', cursor: 'pointer', width: '100%', textAlign: 'left', font: 'inherit', color: 'inherit' }}
+          >
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            <span className="nav-text">Logout</span>
+          </button>
         </nav>
         <div className="canvas-courses-section">
           <div className="canvas-courses-section-title">My Courses</div>

@@ -41,7 +41,11 @@ export default function LoginPage() {
 
     let role = profile?.role as string | undefined
     if (profileError || !role) {
-      const res = await fetch('/api/self-assign-student', { method: 'POST' })
+      const accessToken = data.session?.access_token
+      const res = await fetch('/api/self-assign-student', {
+        method: 'POST',
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      })
       if (!res.ok) {
         const json = await res.json().catch(() => ({}))
         setError(json.error || 'Could not complete signup.')

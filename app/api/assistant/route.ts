@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import Groq from 'groq-sdk'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { createClient as createAdminClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getAuthUser } from '@/lib/supabase/server'
 import { getOllamaEmbedding } from '@/lib/ollama-embed'
 
@@ -431,7 +431,7 @@ async function answerWithRag(
   history: HistoryMessage[],
   preferredCourseId: string | undefined,
   userId: string,
-  admin: ReturnType<typeof createAdminClient>,
+  admin: SupabaseClient,
   request: Request,
   groqClient: Groq
 ): Promise<{
@@ -447,11 +447,10 @@ async function answerWithRag(
     .eq('student_id', userId)
     .eq('status', 'enrolled')
 
-  const courses = (enrollments ?? [])
-    .map((e: { course_id: string; course: { id: string; name: string; code: string } | null }) =>
-      e.course ? { id: e.course.id, name: (e.course as { name: string }).name ?? '', code: (e.course as { code: string }).code ?? '' } : null
-    )
-    .filter(Boolean) as { id: string; name: string; code: string }[]
+  const courses = (enrollments ?? []).map((e: { course_id: string; course: { id: string; name: string; code: string }[] | null }) => {
+    const course = Array.isArray(e.course) ? e.course[0] ?? null : e.course
+    return course ? { id: course.id, name: course.name ?? '', code: course.code ?? '' } : null
+  }).filter(Boolean) as { id: string; name: string; code: string }[]
 
   if (courses.length === 0) {
     return {
@@ -481,7 +480,7 @@ async function answerWithRag(
       query_embedding: queryEmbedding,
       p_course_id: courseId,
       match_limit: 12,
-    })
+    } as never)
     if (error) throw new Error(error.message)
     chunks = Array.isArray(data) ? data : []
   } catch (e) {
@@ -531,7 +530,7 @@ async function answerWithRag(
     temperature: 0.2,
     max_tokens: 600,
   })
-  const usage = completion.usage ?? {}
+  const usage = (completion.usage ?? {}) as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
 
   return {
     answer: completion.choices[0]?.message?.content?.trim() ?? '',

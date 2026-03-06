@@ -7,7 +7,8 @@ import { supabase } from '@/lib/supabase'
 
 export default function SignupPage() {
   const router = useRouter()
-  const [name, setName] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -34,7 +35,11 @@ export default function SignupPage() {
       email,
       password,
       options: {
-        data: { full_name: name },
+        data: {
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          full_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+        },
       },
     })
     setLoading(false)
@@ -69,15 +74,28 @@ export default function SignupPage() {
         )}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="name">Name</label>
+            <label htmlFor="firstName">First name</label>
             <input
-              id="name"
+              id="firstName"
               type="text"
-              placeholder="Your name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              placeholder="First name"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
               required
-              autoComplete="name"
+              autoComplete="given-name"
+              disabled={loading}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="lastName">Last name</label>
+            <input
+              id="lastName"
+              type="text"
+              placeholder="Last name"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              required
+              autoComplete="family-name"
               disabled={loading}
             />
           </div>

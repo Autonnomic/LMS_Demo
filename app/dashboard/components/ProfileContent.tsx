@@ -27,6 +27,8 @@ export interface StudyPlanWithProgress {
 interface ProfileContentProps {
   profile: ProfileData
   dashboardHref: string
+  /** When false, hides the "← Dashboard" back link (e.g. on admin profile where sidebar is the nav). Default true. */
+  showBackToDashboard?: boolean
   // Student
   gpa?: number
   totalCredits?: number
@@ -40,6 +42,13 @@ interface ProfileContentProps {
   // Professor
   coursesTaughtCount?: number
   totalStudentsTaught?: number
+  // Admin
+  totalUsers?: number
+  totalCourses?: number
+  totalProfessors?: number
+  pendingEnrollments?: number
+  allowedSignupEmailsCount?: number
+  adminMetricsLoading?: boolean
 }
 
 function metricCard(
@@ -78,6 +87,7 @@ function metricCard(
 export default function ProfileContent({
   profile,
   dashboardHref,
+  showBackToDashboard = true,
   gpa = 0,
   totalCredits = 0,
   gradesCount = 0,
@@ -89,6 +99,12 @@ export default function ProfileContent({
   metricsLoading = false,
   coursesTaughtCount = 0,
   totalStudentsTaught = 0,
+  totalUsers = 0,
+  totalCourses = 0,
+  totalProfessors = 0,
+  pendingEnrollments = 0,
+  allowedSignupEmailsCount = 0,
+  adminMetricsLoading = false,
 }: ProfileContentProps) {
   const fullName = [profile.first_name, profile.last_name].filter(Boolean).join(' ') || 'No name set'
   const initials = (profile.first_name?.[0] || profile.last_name?.[0] || profile.email?.[0] || '?').toUpperCase()
@@ -100,11 +116,13 @@ export default function ProfileContent({
 
   return (
     <>
-      <div className="canvas-topbar">
-        <Link href={dashboardHref} className="canvas-topbar-title" style={{ textDecoration: 'none', color: 'inherit' }}>
-          ← Dashboard
-        </Link>
-      </div>
+      {showBackToDashboard && (
+        <div className="canvas-topbar">
+          <Link href={dashboardHref} className="canvas-topbar-title" style={{ textDecoration: 'none', color: 'inherit' }}>
+            ← Dashboard
+          </Link>
+        </div>
+      )}
       <div className="canvas-content-area">
         <h1 style={{ fontSize: '1.75rem', fontWeight: 600, color: 'var(--navy-dark)', marginBottom: '1.5rem' }}>
           Profile
@@ -198,9 +216,27 @@ export default function ProfileContent({
         )}
 
         {profile.role === 'admin' && (
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>
-            Admin account. Use the dashboard to manage users, courses, and enrollments.
-          </p>
+          <>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--navy-dark)', marginBottom: '1rem' }}>Overview</h2>
+            {adminMetricsLoading ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div key={i} className="skeleton-card skeleton" style={{ padding: '1.25rem 1.5rem', minHeight: 100 }} />
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem', maxWidth: 640 }}>
+                {metricCard('Total users', totalUsers, 'All accounts', '/dashboard/admin/users')}
+                {metricCard('Professors', totalProfessors, 'Instructor accounts', '/dashboard/admin/users')}
+                {metricCard('Courses', totalCourses, 'All courses', '/dashboard/admin/courses')}
+                {metricCard('Pending enrollments', pendingEnrollments, 'Awaiting approval', '/dashboard/admin/enrollments')}
+                {metricCard('Allowed signup emails', allowedSignupEmailsCount, 'Can create account', '/dashboard/admin/signup-emails')}
+              </div>
+            )}
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>
+              Use the sidebar to manage users, courses, enrollments, and allowed signup emails.
+            </p>
+          </>
         )}
       </div>
     </>

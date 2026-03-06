@@ -29,10 +29,15 @@ export async function POST(request: Request) {
       .eq('id', user.id)
       .maybeSingle()
 
-    const fullName = (user.user_metadata?.full_name as string) || ''
-    const nameParts = fullName.trim().split(/\s+/)
-    const firstName = nameParts[0] ?? null
-    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null
+    const meta = user.user_metadata ?? {}
+    let firstName = (meta.first_name as string)?.trim() || null
+    let lastName = (meta.last_name as string)?.trim() || null
+    if (firstName == null && lastName == null) {
+      const fullName = (meta.full_name as string) || ''
+      const nameParts = fullName.trim().split(/\s+/)
+      firstName = nameParts[0] ?? null
+      lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : null
+    }
 
     if (!existing) {
       const { error: insertError } = await adminClient

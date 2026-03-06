@@ -59,7 +59,7 @@ export default function Sidebar({ courses }: SidebarProps) {
   }
 
   const isAiHelperActive = () => {
-    return pathname === '/dashboard/student/ai-helper'
+    return pathname === '/dashboard/student/ai-helper' || pathname === '/dashboard/ai-helper'
   }
 
   return (
@@ -158,7 +158,7 @@ export default function Sidebar({ courses }: SidebarProps) {
         </Link>
 
         <Link 
-          href="/dashboard/student/ai-helper" 
+          href="/dashboard/ai-helper" 
           className={`canvas-nav-item ${isAiHelperActive() ? 'active' : ''}`}
           title="AI helper"
         >

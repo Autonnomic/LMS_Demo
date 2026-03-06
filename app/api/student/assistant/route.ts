@@ -4,9 +4,9 @@ import { getAuthUser } from '@/lib/supabase/server'
 
 const MODEL_NAME = process.env.GROQ_MODEL_NAME || 'llama-3.1-8b-instant'
 
-const groqClient =
-  process.env.GROQ_API_KEY &&
-  new Groq({ apiKey: process.env.GROQ_API_KEY })
+const groqClient: Groq | null = process.env.GROQ_API_KEY
+  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+  : null
 
 type RouteMode = 'simple' | 'rag'
 
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const mode = await routeQuestion(question)
+    const mode = await routeQuestion(question, groqClient)
 
     if (mode === 'rag') {
       return NextResponse.json({
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       })
     }
 
-    const answer = await answerSimple(question)
+    const answer = await answerSimple(question, groqClient)
     return NextResponse.json({ mode: 'simple', answer })
   } catch (e) {
     console.error('Student assistant error:', e)
@@ -58,10 +58,10 @@ export async function POST(request: Request) {
   }
 }
 
-async function routeQuestion(question: string): Promise<RouteMode> {
+async function routeQuestion(question: string, client: Groq): Promise<RouteMode> {
   if (question.length < 30) return 'simple'
 
-  const completion = await groqClient!.chat.completions.create({
+  const completion = await client.chat.completions.create({
     model: MODEL_NAME,
     messages: [
       {
@@ -91,8 +91,8 @@ async function routeQuestion(question: string): Promise<RouteMode> {
   }
 }
 
-async function answerSimple(question: string): Promise<string> {
-  const completion = await groqClient!.chat.completions.create({
+async function answerSimple(question: string, client: Groq): Promise<string> {
+  const completion = await client.chat.completions.create({
     model: MODEL_NAME,
     messages: [
       {

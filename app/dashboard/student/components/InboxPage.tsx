@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -40,6 +40,7 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
   const [searching, setSearching] = useState(false)
   const [mobileShowChat, setMobileShowChat] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [conversationSearchQuery, setConversationSearchQuery] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messageChannelRef = useRef<any>(null)
 
@@ -292,6 +293,17 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
 
   const currentConversation = conversations.find((c) => c.id === selectedConversation)
 
+  const filteredConversations = useMemo(() => {
+    if (!conversationSearchQuery.trim()) return conversations
+    const q = conversationSearchQuery.trim().toLowerCase()
+    return conversations.filter((conv) => {
+      const name = [conv.other_user?.first_name, conv.other_user?.last_name].filter(Boolean).join(' ').toLowerCase()
+      const email = (conv.other_user?.email ?? '').toLowerCase()
+      const lastMsg = (conv.last_message?.content ?? '').toLowerCase()
+      return name.includes(q) || email.includes(q) || lastMsg.includes(q)
+    })
+  }, [conversations, conversationSearchQuery])
+
   const headerStyle = {
     padding: '12px 16px',
     background: 'var(--navy-dark)',
@@ -338,6 +350,23 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
           <img src="/logo.png" alt="" style={{ height: 52, marginLeft: 'auto', objectFit: 'contain' }} />
         )}
       </div>
+      {!showNewChat && (
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+          <div style={{ position: 'relative' }}>
+            <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} aria-hidden>
+              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            </span>
+            <input
+              type="search"
+              value={conversationSearchQuery}
+              onChange={(e) => setConversationSearchQuery(e.target.value)}
+              placeholder="Search chats..."
+              aria-label="Search conversations"
+              style={{ width: '100%', padding: '10px 14px 10px 40px', borderRadius: '20px', border: '1px solid var(--border)', fontSize: '0.9rem', outline: 'none', background: 'var(--bg)' }}
+            />
+          </div>
+        </div>
+      )}
       {showNewChat ? (
         <>
           <div style={{ padding: '12px', borderBottom: '1px solid var(--border)' }}>
@@ -371,9 +400,15 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
                 </div>
               ))}
             </div>
-          ) : conversations.length === 0 ? (
-            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}><p>No conversations yet</p><p style={{ marginTop: '8px' }}>Tap &quot;New chat&quot; to search and start a conversation</p></div>
-          ) : conversations.map((conv) => (
+          ) : filteredConversations.length === 0 ? (
+            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+              {conversations.length === 0 ? (
+                <><p>No conversations yet</p><p style={{ marginTop: '8px' }}>Tap &quot;New chat&quot; to search and start a conversation</p></>
+              ) : (
+                <><p>No chats match your search</p><p style={{ marginTop: '8px' }}>Try a different name, email, or message text</p></>
+              )}
+            </div>
+          ) : filteredConversations.map((conv) => (
             <div
               key={conv.id}
               onClick={() => { setSelectedConversation(conv.id); setMobileShowChat(true) }}
