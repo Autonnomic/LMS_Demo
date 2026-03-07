@@ -314,7 +314,7 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
     flexShrink: 0,
   }
   const listItemStyle = {
-    padding: '12px 16px',
+    padding: '12px 44px 12px 16px',
     borderBottom: '1px solid var(--border)',
     cursor: 'pointer',
     transition: 'background 0.15s',

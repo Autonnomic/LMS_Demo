@@ -8,6 +8,7 @@ import Chat from '../student/components/Chat'
 import Notifications from '../student/components/Notifications'
 import { ChatProvider } from '../student/components/ChatContext'
 import UserMenu from '../components/UserMenu'
+import CalendarIcon from '../components/CalendarIcon'
 
 interface Course {
   id: string
@@ -138,6 +139,10 @@ export default function ProfessorDashboard() {
       <ChatProvider>
         <main className="canvas-main-content">
           <div className="canvas-topbar">
+            <div className="canvas-topbar-brand">
+              <span className="skeleton skeleton-text lg canvas-topbar-title" style={{ width: '120px' }} />
+              <span className="skeleton canvas-topbar-logo-mobile" style={{ width: 48, height: 48, borderRadius: 8 }} />
+            </div>
             <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
               <div className="skeleton skeleton-avatar" />
               <div className="skeleton skeleton-avatar" />
@@ -208,6 +213,10 @@ function ProfessorDashboardContent({
   return (
     <main className="canvas-main-content">
       <div className="canvas-topbar">
+        <div className="canvas-topbar-brand">
+          <h1 className="canvas-topbar-title">My Courses</h1>
+          <img src="/logo.png" alt="" className="canvas-topbar-logo-mobile" />
+        </div>
         <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           {userId && <Notifications userId={userId} />}
           {userId && <Chat userId={userId} userRole={userRole} hideTriggerButton />}
@@ -249,9 +258,7 @@ function ProfessorDashboardContent({
                         </div>
                         {course.semester && (
                           <div className="canvas-course-card-info-item">
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
+                            <CalendarIcon size={24} ariaHidden />
                             {course.semester} {course.academic_year}
                           </div>
                         )}

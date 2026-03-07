@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 
 interface UserMenuProps {
@@ -9,17 +10,42 @@ interface UserMenuProps {
 }
 
 export default function UserMenu({ userName, userInitials, onLogout }: UserMenuProps) {
+  const [open, setOpen] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    if (open) {
+      document.addEventListener('click', handleClickOutside)
+      return () => document.removeEventListener('click', handleClickOutside)
+    }
+  }, [open])
+
   return (
-    <div className="canvas-user-menu-wrapper">
-      <div className="canvas-user-menu canvas-user-menu-trigger">
+    <div ref={wrapperRef} className={`canvas-user-menu-wrapper ${open ? 'is-open' : ''}`}>
+      <button
+        type="button"
+        className="canvas-user-menu canvas-user-menu-trigger"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((prev) => !prev)
+        }}
+        aria-expanded={open}
+        aria-haspopup="true"
+        style={{ border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem', borderRadius: 8 }}
+      >
         <div className="canvas-user-avatar">{userInitials}</div>
-        <div>
+        <div className="canvas-user-menu-name">
           <div style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>
             {userName}
           </div>
         </div>
-      </div>
-      <div className="canvas-user-menu-dropdown" aria-hidden>
+      </button>
+      <div className="canvas-user-menu-dropdown" aria-hidden={!open}>
         <Link href="/dashboard/profile" className="canvas-user-menu-dropdown-item">
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="18" height="18" aria-hidden>
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />

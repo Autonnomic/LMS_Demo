@@ -118,9 +118,12 @@ export default function ProfileContent({
     <>
       {showBackToDashboard && (
         <div className="canvas-topbar">
-          <Link href={dashboardHref} className="canvas-topbar-title" style={{ textDecoration: 'none', color: 'inherit' }}>
-            ← Dashboard
-          </Link>
+          <div className="canvas-topbar-brand">
+            <Link href={dashboardHref} className="canvas-topbar-title" style={{ textDecoration: 'none', color: 'inherit' }}>
+              ← Dashboard
+            </Link>
+            <img src="/logo.png" alt="" className="canvas-topbar-logo-mobile" />
+          </div>
         </div>
       )}
       <div className="canvas-content-area">

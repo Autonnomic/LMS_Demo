@@ -52,13 +52,19 @@ export default function StudentInboxPage() {
                 <div className="skeleton skeleton-avatar" />
                 <span className="skeleton skeleton-text lg" style={{ width: '80px' }} />
               </div>
-              <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-                <div style={{ width: '320px', borderRight: '1px solid var(--border)', padding: '12px 16px' }}>
-                  <div className="skeleton skeleton-text sm" style={{ width: '70%', marginBottom: '0.75rem' }} />
-                  <div className="skeleton skeleton-text sm" style={{ width: '90%', marginBottom: '0.5rem' }} />
-                  <div className="skeleton skeleton-text sm" style={{ width: '85%' }} />
+              <div className="inbox-loading-skeleton" style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+                <div className="inbox-loading-list" style={{ width: '320px', borderRight: '1px solid var(--border)', padding: '12px', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0' }}>
+                      <div className="skeleton skeleton-avatar" style={{ width: 40, height: 40, flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="skeleton skeleton-text sm" style={{ width: '70%', marginBottom: '0.35rem' }} />
+                        <div className="skeleton skeleton-text sm" style={{ width: '90%' }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div style={{ flex: 1, padding: '16px' }}>
+                <div className="inbox-loading-detail" style={{ flex: 1, padding: '16px', minWidth: 0 }}>
                   <div className="skeleton-card skeleton">
                     <div className="skeleton skeleton-text lg" style={{ width: '40%', marginBottom: '0.75rem' }} />
                     <div className="skeleton skeleton-text sm" style={{ width: '80%', marginBottom: '0.5rem' }} />

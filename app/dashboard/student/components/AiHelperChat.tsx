@@ -52,6 +52,7 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
   const [activeChatId, setActiveChatId] = useState<string | null>(null)
   const [draftMessages, setDraftMessages] = useState<Message[]>([])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -87,11 +88,13 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
     setDraftMessages([])
     setError(null)
     setInput('')
+    setMobileMenuOpen(false)
   }
 
   function handleSelectChat(id: string) {
     setActiveChatId(id)
     setError(null)
+    setMobileMenuOpen(false)
   }
 
   async function handleDeleteChat(e: React.MouseEvent, chatId: string) {
@@ -237,11 +240,69 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   )
 
+  const recentChatsPanel = (
+    <>
+      <div style={{ padding: '0.75rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <button
+          type="button"
+          onClick={handleNewChat}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.5rem',
+            padding: '0.5rem 0.75rem',
+            borderRadius: 8,
+            border: '1px solid var(--border)',
+            background: 'var(--teal-bright)',
+            color: 'white',
+            fontSize: '0.85rem',
+            fontWeight: 500,
+            cursor: 'pointer',
+          }}
+        >
+          <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          New chat
+        </button>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 0' }}>
+        {sortedChats.length === 0 ? (
+          <div style={{ padding: '1rem 0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+            No chats yet. Start a new chat.
+          </div>
+        ) : (
+          sortedChats.map((chat: Chat) => (
+            <div key={chat.id} className="ai-helper-chat-row" data-active={activeChatId === chat.id}>
+              <button type="button" onClick={() => handleSelectChat(chat.id)} className="ai-helper-chat-row-btn">
+                <div className="ai-helper-chat-row-content">
+                  <div className="ai-helper-chat-row-title" style={{ fontWeight: activeChatId === chat.id ? 600 : 400 }}>
+                    {chat.title}
+                  </div>
+                  <div className="ai-helper-chat-row-date">{new Date(chat.createdAt).toLocaleDateString()}</div>
+                </div>
+              </button>
+              <div className="ai-helper-chat-row-overlay" data-active={activeChatId === chat.id}>
+                <button type="button" onClick={(e) => handleDeleteChat(e, chat.id)} className="ai-helper-chat-delete" aria-label="Delete chat">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  )
+
   return (
     <div className="ai-helper-layout">
-      {/* Collapsible chat sidebar */}
+      {/* Desktop: collapsible sidebar. Mobile: hidden, use overlay instead. */}
       <aside
-        className="ai-helper-sidebar"
+        className="ai-helper-sidebar ai-helper-sidebar-desktop"
         style={{
           width: sidebarCollapsed ? 52 : 300,
           minWidth: sidebarCollapsed ? 52 : 300,
@@ -370,8 +431,60 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
         )}
       </aside>
 
+      {/* Mobile: full-screen overlay for recent chats */}
+      {mobileMenuOpen && (
+        <div
+          className="ai-helper-mobile-overlay"
+          role="dialog"
+          aria-label="Recent chats"
+        >
+          <div className="ai-helper-mobile-overlay-backdrop" onClick={() => setMobileMenuOpen(false)} />
+          <div className="ai-helper-mobile-overlay-panel">
+            <div className="ai-helper-mobile-overlay-header">
+              <span style={{ fontWeight: 600, fontSize: '1rem' }}>Recent chats</span>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                className="ai-helper-burger-close"
+                aria-label="Close menu"
+              >
+                <span className="ai-helper-burger-icon ai-helper-burger-icon-x" aria-hidden>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </span>
+              </button>
+            </div>
+            {recentChatsPanel}
+          </div>
+        </div>
+      )}
+
       {/* Main chat area */}
       <div className="ai-helper-main">
+        {/* Mobile: burger to open recent chats (morphs to X when overlay open) */}
+        <div className="ai-helper-mobile-burger-bar">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((o) => !o)}
+            className="ai-helper-burger-btn"
+            aria-label={mobileMenuOpen ? 'Close menu' : 'Open recent chats'}
+            aria-expanded={mobileMenuOpen}
+          >
+            <span className="ai-helper-burger-icon-wrap" aria-hidden>
+              <span className={`ai-helper-burger-icon ai-helper-burger-icon-ham ${mobileMenuOpen ? 'ai-helper-burger-icon-off' : ''}`}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </span>
+              <span className={`ai-helper-burger-icon ai-helper-burger-icon-x ${!mobileMenuOpen ? 'ai-helper-burger-icon-off' : ''}`}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </span>
+            </span>
+          </button>
+        </div>
         {usagePercent !== null && usagePercent >= 90 && usagePercent < 100 && (
           <div
             style={{

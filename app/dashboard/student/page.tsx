@@ -9,6 +9,7 @@ import Notifications from './components/Notifications'
 import Chat from './components/Chat'
 import { ChatProvider } from './components/ChatContext'
 import UserMenu from '../components/UserMenu'
+import CalendarIcon from '../components/CalendarIcon'
 
 interface Course {
   id: string
@@ -132,15 +133,16 @@ export default function StudentDashboard() {
           <main className="canvas-main-content">
             <div className="canvas-topbar">
               <div className="canvas-topbar-brand">
-                <span className="skeleton skeleton-text lg" style={{ width: '120px' }} />
+                <span className="skeleton skeleton-text lg canvas-topbar-title" style={{ width: '120px' }} />
+                <span className="skeleton canvas-topbar-logo-mobile" style={{ width: 48, height: 48, borderRadius: 8 }} />
               </div>
-              <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <div className="skeleton skeleton-avatar" />
-                <div className="skeleton skeleton-avatar" />
+              <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexShrink: 0 }}>
+                <div className="skeleton skeleton-avatar" style={{ width: 24, height: 24 }} />
+                <div className="skeleton skeleton-avatar" style={{ width: 24, height: 24 }} />
                 <div className="canvas-user-menu-wrapper">
-                  <div className="canvas-user-menu canvas-user-menu-trigger">
+                  <div className="canvas-user-menu canvas-user-menu-trigger" style={{ padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     <div className="canvas-user-avatar skeleton" />
-                    <div>
+                    <div className="canvas-user-menu-name">
                       <div className="skeleton skeleton-text lg" style={{ width: '120px', marginBottom: '0.25rem' }} />
                       <div className="skeleton skeleton-text sm" style={{ width: '60px' }} />
                     </div>
@@ -224,9 +226,7 @@ export default function StudentDashboard() {
                         </div>
                         {course.semester && (
                           <div className="canvas-course-card-info-item">
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
+                            <CalendarIcon size={24} ariaHidden />
                             {course.semester} {course.academic_year}
                           </div>
                         )}

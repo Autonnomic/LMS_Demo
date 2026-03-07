@@ -37,11 +37,12 @@ export async function POST(request: Request) {
       serviceRoleKey
     )
 
-    // Generate notifications for upcoming assignments (due in next 24-48 hours)
-    const tomorrow = new Date()
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    const dayAfter = new Date()
-    dayAfter.setDate(dayAfter.getDate() + 2)
+    // Generate notifications for upcoming assignment deadlines (7-day, 48h, 24h windows)
+    const now = new Date()
+    const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+    const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000)
+    const in7d = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+    const in8d = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000)
 
     // Get all students
     const { data: students } = await adminClient
@@ -55,8 +56,45 @@ export async function POST(request: Request) {
 
     let notificationsCreated = 0
 
+    async function maybeCreateDeadlineNotification(
+      studentId: string,
+      assignment: { id: string; title: string; due_date: string; course_id: string; courses?: { code: string; name: string } | null },
+      type: 'deadline_7d' | 'deadline_48h' | 'deadline_24h',
+      title: string,
+      message: string
+    ) {
+      const { data: submission } = await adminClient
+        .from('assignment_submissions')
+        .select('id')
+        .eq('assignment_id', assignment.id)
+        .eq('student_id', studentId)
+        .single()
+
+      if (submission) return
+
+      const { data: existing } = await adminClient
+        .from('notifications')
+        .select('id')
+        .eq('user_id', studentId)
+        .eq('type', type)
+        .eq('related_id', assignment.id)
+        .maybeSingle()
+
+      if (existing) return
+
+      await adminClient
+        .from('notifications')
+        .insert({
+          user_id: studentId,
+          title,
+          message,
+          type,
+          related_id: assignment.id
+        })
+      notificationsCreated++
+    }
+
     for (const student of students) {
-      // Get enrolled courses
       const { data: enrollments } = await adminClient
         .from('course_registrations')
         .select('course_id')
@@ -65,55 +103,72 @@ export async function POST(request: Request) {
 
       if (!enrollments) continue
 
-      const courseIds = enrollments.map(e => e.course_id)
+      const courseIds = enrollments.map((e: { course_id: string }) => e.course_id)
 
-      // Get assignments due in next 24-48 hours
-      const { data: upcomingAssignments } = await adminClient
+      // Assignments due in 6–8 days (7-day reminder)
+      const { data: in7dAssignments } = await adminClient
         .from('assignments')
         .select('id, title, due_date, course_id, courses(code, name)')
         .in('course_id', courseIds)
-        .gte('due_date', tomorrow.toISOString())
-        .lte('due_date', dayAfter.toISOString())
+        .gte('due_date', in7d.toISOString())
+        .lte('due_date', in8d.toISOString())
 
-      // Check which assignments don't have submissions yet
-      if (upcomingAssignments) {
-        for (const assignment of upcomingAssignments) {
-          const { data: submission } = await adminClient
-            .from('assignment_submissions')
-            .select('id')
-            .eq('assignment_id', assignment.id)
-            .eq('student_id', student.id)
-            .single()
+      if (in7dAssignments) {
+        for (const a of in7dAssignments) {
+          const course = a.courses as { code: string; name: string } | null
+          await maybeCreateDeadlineNotification(
+            student.id,
+            a,
+            'deadline_7d',
+            'Assignment due in 1 week',
+            `${course?.code || 'Course'}: "${a.title}" is due in about 1 week.`
+          )
+        }
+      }
 
-          if (!submission) {
-            // Check if notification already exists
-            const { data: existing } = await adminClient
-              .from('notifications')
-              .select('id')
-              .eq('user_id', student.id)
-              .eq('type', 'deadline')
-              .eq('related_id', assignment.id)
-              .eq('read', false)
-              .single()
+      // Assignments due in 24–48 hours
+      const { data: in48hAssignments } = await adminClient
+        .from('assignments')
+        .select('id, title, due_date, course_id, courses(code, name)')
+        .in('course_id', courseIds)
+        .gte('due_date', in24h.toISOString())
+        .lte('due_date', in48h.toISOString())
 
-            if (!existing) {
-              const dueDate = new Date(assignment.due_date)
-              const hoursUntilDue = Math.round((dueDate.getTime() - new Date().getTime()) / (1000 * 60 * 60))
-              const course = assignment.courses as { code: string; name: string } | null
+      if (in48hAssignments) {
+        for (const a of in48hAssignments) {
+          const dueDate = new Date(a.due_date)
+          const hoursUntilDue = Math.round((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60))
+          const course = a.courses as { code: string; name: string } | null
+          await maybeCreateDeadlineNotification(
+            student.id,
+            a,
+            'deadline_48h',
+            'Assignment due in 2 days',
+            `${course?.code || 'Course'}: "${a.title}" is due in ${hoursUntilDue} hours.`
+          )
+        }
+      }
 
-              await adminClient
-                .from('notifications')
-                .insert({
-                  user_id: student.id,
-                  title: 'Assignment Due Soon',
-                  message: `${course?.code || 'Course'}: ${assignment.title} is due in ${hoursUntilDue} hours`,
-                  type: 'deadline',
-                  related_id: assignment.id
-                })
+      // Assignments due in 0–24 hours
+      const { data: in24hAssignments } = await adminClient
+        .from('assignments')
+        .select('id, title, due_date, course_id, courses(code, name)')
+        .in('course_id', courseIds)
+        .gte('due_date', now.toISOString())
+        .lte('due_date', in24h.toISOString())
 
-              notificationsCreated++
-            }
-          }
+      if (in24hAssignments) {
+        for (const a of in24hAssignments) {
+          const dueDate = new Date(a.due_date)
+          const hoursUntilDue = Math.round((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60))
+          const course = a.courses as { code: string; name: string } | null
+          await maybeCreateDeadlineNotification(
+            student.id,
+            a,
+            'deadline_24h',
+            'Assignment due today',
+            `${course?.code || 'Course'}: "${a.title}" is due in ${hoursUntilDue} hours.`
+          )
         }
       }
 

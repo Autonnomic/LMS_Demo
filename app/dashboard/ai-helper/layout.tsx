@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState, ReactNode, createContext, useContext } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '../student/components/Sidebar'
 import ProfessorSidebar from '../components/ProfessorSidebar'
+import { ProfessorMobileBottomBar } from '../components/ProfessorMobileBottomBar'
 import Notifications from '../student/components/Notifications'
 import Chat from '../student/components/Chat'
 import { ChatProvider } from '../student/components/ChatContext'
@@ -155,7 +157,10 @@ export default function AiHelperLayout({ children }: { children: ReactNode }) {
         </aside>
         <main className="canvas-main-content">
           <div className="canvas-topbar">
-            <h1 className="canvas-topbar-title">AI helper</h1>
+            <div className="canvas-topbar-brand">
+              <span className="skeleton skeleton-text lg canvas-topbar-title" style={{ width: '100px' }} />
+              <span className="skeleton canvas-topbar-logo-mobile" style={{ width: 48, height: 48, borderRadius: 8 }} />
+            </div>
           </div>
           <div className="canvas-content-area">
             <div className="skeleton skeleton-text lg" style={{ width: '200px', marginBottom: '1rem' }} />
@@ -168,7 +173,10 @@ export default function AiHelperLayout({ children }: { children: ReactNode }) {
 
   const topbar = (
     <div className="canvas-topbar">
-      <h1 className="canvas-topbar-title">AI helper</h1>
+      <div className="canvas-topbar-brand">
+        <h1 className="canvas-topbar-title">AI helper</h1>
+        <img src="/logo.png" alt="" className="canvas-topbar-logo-mobile" />
+      </div>
       <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
         <Notifications userId={userInfo.userId} />
         <Chat userId={userInfo.userId} userRole={userInfo.userRole} hideTriggerButton />
@@ -190,6 +198,8 @@ export default function AiHelperLayout({ children }: { children: ReactNode }) {
       {children}
     </div>
   )
+
+  const pathname = usePathname()
 
   if (role === 'student') {
     return (
@@ -216,6 +226,7 @@ export default function AiHelperLayout({ children }: { children: ReactNode }) {
             {topbar}
             {content}
           </main>
+          <ProfessorMobileBottomBar pathname={pathname} />
         </div>
       </ChatProvider>
     </AiHelperUserContext.Provider>

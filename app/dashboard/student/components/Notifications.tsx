@@ -1,8 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useLayoutEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import CalendarIcon from '../../components/CalendarIcon'
+
+const MOBILE_BREAKPOINT = 768
 
 interface Notification {
   id: string
@@ -20,10 +23,30 @@ interface NotificationsProps {
 
 export default function Notifications({ userId }: NotificationsProps) {
   const router = useRouter()
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [isMobile, setIsMobile] = useState(false)
+  const [mobileTop, setMobileTop] = useState(0)
+
+  function checkMobile() {
+    setIsMobile(typeof window !== 'undefined' && window.innerWidth <= MOBILE_BREAKPOINT)
+  }
+
+  useEffect(() => {
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  useLayoutEffect(() => {
+    if (isOpen && isMobile && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      setMobileTop(rect.bottom + 8)
+    }
+  }, [isOpen, isMobile])
 
   useEffect(() => {
     fetchNotifications()
@@ -85,6 +108,9 @@ export default function Notifications({ userId }: NotificationsProps) {
     switch (notification.type) {
       case 'assignment':
       case 'deadline':
+      case 'deadline_7d':
+      case 'deadline_48h':
+      case 'deadline_24h':
         // Navigate to assignment detail page
         router.push(`/dashboard/student/assignments/${notification.related_id}`)
         setIsOpen(false)
@@ -194,12 +220,11 @@ export default function Notifications({ userId }: NotificationsProps) {
           </svg>
         )
       case 'class':
-        return (
-          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-        )
+        return <CalendarIcon size={20} ariaHidden />
       case 'deadline':
+      case 'deadline_7d':
+      case 'deadline_48h':
+      case 'deadline_24h':
         return (
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -224,7 +249,10 @@ export default function Notifications({ userId }: NotificationsProps) {
     switch (type) {
       case 'assignment': return '#3b82f6' // blue
       case 'class': return '#10b981' // green
-      case 'deadline': return '#ef4444' // red
+      case 'deadline':
+      case 'deadline_7d':
+      case 'deadline_48h':
+      case 'deadline_24h': return '#ef4444' // red
       case 'grade': return '#8b5cf6' // purple
       default: return '#0892A5' // teal
     }
@@ -233,6 +261,7 @@ export default function Notifications({ userId }: NotificationsProps) {
   return (
     <div style={{ position: 'relative' }}>
       <button
+        ref={triggerRef}
         onClick={() => setIsOpen(!isOpen)}
         style={{
           position: 'relative',
@@ -295,28 +324,47 @@ export default function Notifications({ userId }: NotificationsProps) {
             onClick={() => setIsOpen(false)}
           />
           <div
-            style={{
-              position: 'absolute',
-              top: 'calc(100% + 0.5rem)',
-              right: 0,
-              width: '400px',
-              maxWidth: '90vw',
-              maxHeight: '600px',
-              background: 'white',
-              borderRadius: '8px',
-              boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
-              zIndex: 1000,
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden'
-            }}
+            style={
+              isMobile
+                ? {
+                    position: 'fixed',
+                    left: 8,
+                    right: 8,
+                    top: mobileTop,
+                    width: 'auto',
+                    maxHeight: 'calc(100vh - 6rem)',
+                    background: 'white',
+                    borderRadius: '8px',
+                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
+                    zIndex: 1000,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden'
+                  }
+                : {
+                    position: 'absolute',
+                    top: 'calc(100% + 0.5rem)',
+                    right: 0,
+                    width: '400px',
+                    maxHeight: '600px',
+                    background: 'white',
+                    borderRadius: '8px',
+                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.15)',
+                    zIndex: 1000,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden'
+                  }
+            }
           >
             <div style={{
               padding: '1rem',
               borderBottom: '1px solid #e5e7eb',
               display: 'flex',
               justifyContent: 'space-between',
-              alignItems: 'center'
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '0.5rem'
             }}>
               <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--text)' }}>
                 Notifications

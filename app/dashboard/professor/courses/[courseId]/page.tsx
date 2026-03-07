@@ -780,7 +780,11 @@ export default function ProfessorCourseDetail() {
     return (
       <main className="canvas-main-content">
         <div className="canvas-topbar">
-          <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginLeft: 'auto' }}>
+          <div className="canvas-topbar-brand">
+            <span className="skeleton skeleton-text lg canvas-topbar-title" style={{ width: '180px' }} />
+            <span className="skeleton canvas-topbar-logo-mobile" style={{ width: 48, height: 48, borderRadius: 8 }} />
+          </div>
+          <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <div className="skeleton skeleton-avatar" />
             <div className="canvas-user-menu-wrapper">
               <div className="canvas-user-menu canvas-user-menu-trigger">
@@ -830,7 +834,10 @@ export default function ProfessorCourseDetail() {
   return (
     <main className="canvas-main-content">
         <div className="canvas-topbar">
-          <h1 className="canvas-topbar-title course-topbar-title">{course.code} - {course.name}</h1>
+          <div className="canvas-topbar-brand">
+            <h1 className="canvas-topbar-title course-topbar-title">{course.code} - {course.name}</h1>
+            <img src="/logo.png" alt="" className="canvas-topbar-logo-mobile" />
+          </div>
           <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {currentUserId && <Notifications userId={currentUserId} />}
             <UserMenu userName={userName} userInitials={userInitials} onLogout={handleLogout} />
