@@ -68,6 +68,16 @@ interface CourseMaterial {
   created_at: string
 }
 
+interface Announcement {
+  id: string
+  course_id: string
+  author_id: string
+  title: string
+  content: string
+  created_at: string
+  author?: { first_name: string | null; last_name: string | null } | null
+}
+
 function CourseDetailPageContent() {
   const router = useRouter()
   const params = useParams()
@@ -84,10 +94,12 @@ function CourseDetailPageContent() {
   const [userInitials, setUserInitials] = useState<string>('')
   const [currentUserId, setCurrentUserId] = useState<string>('')
   const [userRole, setUserRole] = useState<'student' | 'professor'>('student')
-  const [activeCourseTab, setActiveCourseTab] = useState<'overview' | 'materials'>('overview')
+  const [activeCourseTab, setActiveCourseTab] = useState<'overview' | 'materials' | 'announcements'>('overview')
   const [courseMaterials, setCourseMaterials] = useState<CourseMaterial[]>([])
   const [materialsLoading, setMaterialsLoading] = useState(false)
   const [viewingMaterial, setViewingMaterial] = useState<{ url: string; fileName: string } | null>(null)
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  const [announcementsLoading, setAnnouncementsLoading] = useState(false)
 
   const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -142,6 +154,37 @@ function CourseDetailPageContent() {
           else setCourseMaterials([])
         })
         .finally(() => setMaterialsLoading(false))
+    }
+  }, [activeCourseTab, courseId])
+
+  useEffect(() => {
+    if (activeCourseTab === 'announcements' && courseId) {
+      setAnnouncementsLoading(true)
+      supabase
+        .from('announcements')
+        .select(`
+          id,
+          course_id,
+          author_id,
+          title,
+          content,
+          created_at,
+          author:user_profiles(first_name, last_name)
+        `)
+        .eq('course_id', courseId)
+        .order('created_at', { ascending: false })
+        .then(({ data, error }) => {
+          if (error) {
+            setAnnouncements([])
+            return
+          }
+          const list = (data || []).map((row: { author?: { first_name: string | null; last_name: string | null } | { first_name: string | null; last_name: string | null }[] }) => ({
+            ...row,
+            author: Array.isArray(row.author) ? row.author[0] ?? null : row.author ?? null
+          }))
+          setAnnouncements(list as Announcement[])
+        })
+        .finally(() => setAnnouncementsLoading(false))
     }
   }, [activeCourseTab, courseId])
 
@@ -471,6 +514,22 @@ function CourseDetailPageContent() {
             >
               Materials
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveCourseTab('announcements')}
+              style={{
+                padding: '0.5rem 1rem',
+                border: 'none',
+                background: activeCourseTab === 'announcements' ? 'var(--teal-bright)' : 'var(--surface)',
+                color: activeCourseTab === 'announcements' ? 'white' : 'var(--text)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 500,
+                fontSize: '0.9rem'
+              }}
+            >
+              Announcements
+            </button>
           </div>
 
           {activeCourseTab === 'overview' && (
@@ -736,6 +795,40 @@ function CourseDetailPageContent() {
                   </div>
                 ) : (
                   <p style={{ color: 'var(--text-muted)' }}>No materials for this course.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeCourseTab === 'announcements' && (
+            <div className="course-detail-content" style={{ maxWidth: '100%' }}>
+              <div className="course-info-card" style={{ flex: 1 }}>
+                <h3>Announcements</h3>
+                {announcementsLoading ? (
+                  <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
+                ) : announcements.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {announcements.map((a) => (
+                      <div
+                        key={a.id}
+                        style={{
+                          padding: '1rem 1.25rem',
+                          background: 'var(--surface)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 12,
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+                        }}
+                      >
+                        <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text)', marginBottom: '0.35rem' }}>{a.title}</div>
+                        {a.content && <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', marginBottom: '0.5rem' }}>{a.content}</div>}
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                          Posted by {a.author ? [a.author.first_name, a.author.last_name].filter(Boolean).join(' ') : 'Professor'} · {new Date(a.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ color: 'var(--text-muted)' }}>No announcements for this course yet.</p>
                 )}
               </div>
             </div>

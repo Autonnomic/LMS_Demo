@@ -75,6 +75,16 @@ interface CourseGrade {
   graded_at: string | null
 }
 
+interface Announcement {
+  id: string
+  course_id: string
+  author_id: string
+  title: string
+  content: string
+  created_at: string
+  author?: { first_name: string | null; last_name: string | null } | null
+}
+
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export default function ProfessorCourseDetail() {
@@ -88,7 +98,7 @@ export default function ProfessorCourseDetail() {
   const [allStudents, setAllStudents] = useState<Student[]>([])
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0])
   const [attendanceRecords, setAttendanceRecords] = useState<Record<string, AttendanceRecord>>({})
-  const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'schedule' | 'students' | 'assignments' | 'grades' | 'materials'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'attendance' | 'schedule' | 'students' | 'assignments' | 'grades' | 'materials' | 'announcements'>('overview')
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null)
   const [newSchedule, setNewSchedule] = useState({
     day_of_week: 1,
@@ -119,6 +129,10 @@ export default function ProfessorCourseDetail() {
     instructions: ''
   })
   const [courseGrades, setCourseGrades] = useState<CourseGrade[]>([])
+  const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  const [announcementsLoading, setAnnouncementsLoading] = useState(false)
+  const [postingAnnouncement, setPostingAnnouncement] = useState(false)
+  const [newAnnouncement, setNewAnnouncement] = useState({ title: '', content: '' })
   const [assignmentTemplates, setAssignmentTemplates] = useState([
     { name: 'Homework', type: 'homework', points: 100, description: 'Weekly homework assignment' },
     { name: 'Quiz', type: 'quiz', points: 50, description: 'Short quiz assessment' },
@@ -179,6 +193,12 @@ export default function ProfessorCourseDetail() {
   useEffect(() => {
     if (activeTab === 'students') {
       fetchAllStudents()
+    }
+  }, [activeTab, courseId])
+
+  useEffect(() => {
+    if (activeTab === 'announcements' && courseId) {
+      fetchAnnouncements()
     }
   }, [activeTab, courseId])
 
@@ -373,6 +393,69 @@ export default function ProfessorCourseDetail() {
     } catch (error) {
       console.error('Error fetching grades:', error)
       setCourseGrades([])
+    }
+  }
+
+  async function fetchAnnouncements() {
+    if (!courseId) return
+    setAnnouncementsLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('announcements')
+        .select(`
+          id,
+          course_id,
+          author_id,
+          title,
+          content,
+          created_at,
+          author:user_profiles(first_name, last_name)
+        `)
+        .eq('course_id', courseId)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      const raw = (data || []) as { author?: { first_name: string | null; last_name: string | null } | { first_name: string | null; last_name: string | null }[] }[]
+      const list = raw.map((row) => ({
+        ...row,
+        author: Array.isArray(row.author) ? row.author[0] ?? null : row.author ?? null
+      })) as Announcement[]
+      setAnnouncements(list)
+    } catch (err) {
+      console.error('Error fetching announcements:', err)
+      setAnnouncements([])
+    } finally {
+      setAnnouncementsLoading(false)
+    }
+  }
+
+  async function handlePostAnnouncement(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newAnnouncement.title.trim()) return
+    setPostingAnnouncement(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/professor/courses/${courseId}/announcements`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
+        },
+        body: JSON.stringify({
+          title: newAnnouncement.title.trim(),
+          content: newAnnouncement.content.trim(),
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to post announcement')
+      }
+      setNewAnnouncement({ title: '', content: '' })
+      await fetchAnnouncements()
+    } catch (err) {
+      console.error(err)
+      alert(err instanceof Error ? err.message : 'Failed to post announcement')
+    } finally {
+      setPostingAnnouncement(false)
     }
   }
 
@@ -888,6 +971,12 @@ export default function ProfessorCourseDetail() {
               onClick={() => setActiveTab('materials')}
             >
               Materials
+            </button>
+            <button
+              className={`professor-tab ${activeTab === 'announcements' ? 'active' : ''}`}
+              onClick={() => setActiveTab('announcements')}
+            >
+              Announcements
             </button>
           </div>
 
@@ -2002,6 +2091,70 @@ export default function ProfessorCourseDetail() {
                 </div>
               ) : (
                 <p style={{ color: 'var(--text-muted)' }}>No course materials yet. Upload PDFs above.</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'announcements' && (
+            <div>
+              <h3 style={{ marginBottom: '1rem' }}>Announcements</h3>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                Post an announcement to notify all enrolled students. They will see a notification: &quot;New announcement posted by [you] for [this course].&quot;
+              </p>
+              <form onSubmit={handlePostAnnouncement} style={{ marginBottom: '1.5rem' }}>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label htmlFor="ann-title" style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.25rem' }}>Title</label>
+                  <input
+                    id="ann-title"
+                    type="text"
+                    value={newAnnouncement.title}
+                    onChange={(e) => setNewAnnouncement(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="Announcement title"
+                    required
+                    style={{ width: '100%', maxWidth: 400, padding: '0.5rem 0.75rem', border: '1px solid var(--border)', borderRadius: 8 }}
+                  />
+                </div>
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label htmlFor="ann-content" style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.25rem' }}>Content</label>
+                  <textarea
+                    id="ann-content"
+                    value={newAnnouncement.content}
+                    onChange={(e) => setNewAnnouncement(prev => ({ ...prev, content: e.target.value }))}
+                    placeholder="Message to students (optional)"
+                    rows={4}
+                    style={{ width: '100%', maxWidth: 560, padding: '0.5rem 0.75rem', border: '1px solid var(--border)', borderRadius: 8, resize: 'vertical' }}
+                  />
+                </div>
+                <button type="submit" className="btn-primary" disabled={postingAnnouncement || !newAnnouncement.title.trim()}>
+                  {postingAnnouncement ? 'Posting…' : 'Post announcement'}
+                </button>
+              </form>
+              <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '1.5rem 0' }} />
+              {announcementsLoading ? (
+                <p style={{ color: 'var(--text-muted)' }}>Loading announcements…</p>
+              ) : announcements.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {announcements.map((a) => (
+                    <div
+                      key={a.id}
+                      style={{
+                        padding: '1rem 1.25rem',
+                        background: 'var(--surface)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 12,
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+                      }}
+                    >
+                      <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text)', marginBottom: '0.35rem' }}>{a.title}</div>
+                      {a.content && <div style={{ fontSize: '0.9rem', color: 'var(--text-muted)', whiteSpace: 'pre-wrap', marginBottom: '0.5rem' }}>{a.content}</div>}
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                        Posted by {a.author ? [a.author.first_name, a.author.last_name].filter(Boolean).join(' ') : 'Professor'} · {new Date(a.created_at).toLocaleString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color: 'var(--text-muted)' }}>No announcements yet. Post one above to notify all enrolled students.</p>
               )}
             </div>
           )}

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useLayoutEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { TbSpeakerphone } from 'react-icons/tb'
 import CalendarIcon from '../../components/CalendarIcon'
 
 const MOBILE_BREAKPOINT = 768
@@ -236,6 +237,8 @@ export default function Notifications({ userId }: NotificationsProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
           </svg>
         )
+      case 'announcement':
+        return <TbSpeakerphone size={20} style={{ display: 'block', flexShrink: 0 }} />
       default:
         return (
           <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20">
@@ -254,6 +257,7 @@ export default function Notifications({ userId }: NotificationsProps) {
       case 'deadline_48h':
       case 'deadline_24h': return '#ef4444' // red
       case 'grade': return '#8b5cf6' // purple
+      case 'announcement': return '#0892A5' // teal
       default: return '#0892A5' // teal
     }
   }
@@ -463,11 +467,13 @@ export default function Notifications({ userId }: NotificationsProps) {
                       e.currentTarget.style.background = notification.read ? 'white' : '#f0f9ff'
                     }}
                   >
-                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start' }}>
                       <div style={{
                         color: getNotificationColor(notification.type),
                         flexShrink: 0,
-                        marginTop: '0.125rem'
+                        minWidth: 20,
+                        minHeight: 20,
+                        overflow: 'visible'
                       }}>
                         {getNotificationIcon(notification.type)}
                       </div>
