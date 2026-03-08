@@ -440,21 +440,67 @@ async function answerWithRag(
   completionTokens: number
   totalTokens: number
 }> {
-  // Use admin so we get enrollments even when session is only in Authorization header (not cookies)
-  const { data: enrollments } = await admin
-    .from('course_registrations')
-    .select('course_id, course:courses(id, name, code)')
-    .eq('student_id', userId)
-    .eq('status', 'enrolled')
+  const { data: profile } = await admin
+    .from('user_profiles')
+    .select('role')
+    .eq('id', userId)
+    .single()
 
-  const courses = (enrollments ?? []).map((e: { course_id: string; course: { id: string; name: string; code: string }[] | null }) => {
-    const course = Array.isArray(e.course) ? e.course[0] ?? null : e.course
-    return course ? { id: course.id, name: course.name ?? '', code: course.code ?? '' } : null
-  }).filter(Boolean) as { id: string; name: string; code: string }[]
+  const isProfessor = profile?.role === 'professor'
+  let courses: { id: string; name: string; code: string }[] = []
+
+  if (isProfessor) {
+    const { data: taughtByPrimary } = await admin
+      .from('courses')
+      .select('id, name, code')
+      .eq('professor_id', userId)
+    const { data: taughtBySecondary } = await admin
+      .from('course_professors')
+      .select('course_id')
+      .eq('professor_id', userId)
+    const primaryCourses = (taughtByPrimary ?? []).map((c) => ({
+      id: c.id,
+      name: (c.name ?? '').trim(),
+      code: (c.code ?? '').trim(),
+    }))
+    const secondaryIds = (taughtBySecondary ?? []).map((r) => r.course_id).filter(Boolean)
+    let secondaryCourses: { id: string; name: string; code: string }[] = []
+    if (secondaryIds.length > 0) {
+      const { data: secondaryRows } = await admin
+        .from('courses')
+        .select('id, name, code')
+        .in('id', secondaryIds)
+      secondaryCourses = (secondaryRows ?? []).map((c) => ({
+        id: c.id,
+        name: (c.name ?? '').trim(),
+        code: (c.code ?? '').trim(),
+      }))
+    }
+    const seen = new Set<string>()
+    for (const c of [...primaryCourses, ...secondaryCourses]) {
+      if (!seen.has(c.id)) {
+        seen.add(c.id)
+        courses.push(c)
+      }
+    }
+  }
+
+  if (courses.length === 0) {
+    const { data: enrollments } = await admin
+      .from('course_registrations')
+      .select('course_id, course:courses(id, name, code)')
+      .eq('student_id', userId)
+      .eq('status', 'enrolled')
+
+    courses = (enrollments ?? []).map((e: { course_id: string; course: { id: string; name: string; code: string }[] | null }) => {
+      const course = Array.isArray(e.course) ? e.course[0] ?? null : e.course
+      return course ? { id: course.id, name: course.name ?? '', code: course.code ?? '' } : null
+    }).filter(Boolean) as { id: string; name: string; code: string }[]
+  }
 
   if (courses.length === 0) {
     return {
-      answer: "You aren't enrolled in any courses, so I can't search course materials. Ask a general question for a direct answer.",
+      answer: "You don't have access to any course materials (enrolled or teaching), so I can't search them. Ask a general question for a direct answer.",
       promptTokens: 0,
       completionTokens: 0,
       totalTokens: 0,

@@ -412,7 +412,7 @@ export default function CalendarPage() {
               <UserMenu
                 userName={userName}
                 userInitials={userInitials}
-                onLogout={() => { supabase.auth.signOut(); router.push('/'); router.refresh(); }}
+                onLogout={() => { import('@/lib/auth').then(({ logout }) => logout()).then(() => { router.push('/'); router.refresh(); }); }}
               />
             </div>
           </div>

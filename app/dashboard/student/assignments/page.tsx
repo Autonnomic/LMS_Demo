@@ -17,6 +17,7 @@ interface Assignment {
   max_points: number
   assignment_type: string | null
   instructions: string | null
+  show_grades_to_students?: boolean
   course: {
     id: string
     code: string
@@ -93,7 +94,7 @@ export default function AssignmentsPage() {
         setCourses(courseList)
       }
 
-      // Fetch assignments
+      // Fetch assignments (include show_grades_to_students for quiz grade visibility)
       const { data: assignmentsData } = await supabase
         .from('assignments')
         .select(`
@@ -104,6 +105,7 @@ export default function AssignmentsPage() {
           max_points,
           assignment_type,
           instructions,
+          show_grades_to_students,
           course:courses (
             id,
             code,
@@ -143,12 +145,14 @@ export default function AssignmentsPage() {
   function getStatus(assignment: Assignment): 'pending' | 'submitted' | 'graded' | 'overdue' {
     const now = new Date()
     const dueDate = new Date(assignment.due_date)
-    
-    // Check if submission exists and has been graded
-    if (assignment.submission && assignment.submission.grade !== null && assignment.submission.grade !== undefined) {
+    const isQuiz = assignment.assignment_type === 'quiz'
+    const gradesVisible = isQuiz ? assignment.show_grades_to_students : true
+
+    // Check if submission exists and grade is visible (for quiz, only when released)
+    if (assignment.submission && assignment.submission.grade !== null && assignment.submission.grade !== undefined && gradesVisible) {
       return 'graded'
     }
-    // Check if submission exists (but not graded yet)
+    // Check if submission exists (but not graded yet, or quiz grade not released)
     if (assignment.submission) {
       return 'submitted'
     }
@@ -249,7 +253,7 @@ export default function AssignmentsPage() {
               userName={userName}
               userInitials={userInitials}
               onLogout={() => {
-                supabase.auth.signOut()
+                import('@/lib/auth').then(({ logout }) => logout())
                 router.push('/')
                 router.refresh()
               }}
@@ -300,96 +304,69 @@ export default function AssignmentsPage() {
             </div>
           </div>
 
-          {/* Assignments List */}
+          {/* Assignments List - single line per assignment */}
           {filteredAssignments.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', background: 'white' }}>
+              {/* Header row (desktop) */}
+              <div style={{ display: 'flex', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--surface)', borderBottom: '1px solid #e5e7eb', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                <div style={{ flex: '1 1 20%', minWidth: 0 }}>Name</div>
+                <div style={{ flex: '1 1 22%', minWidth: 0 }}>Course</div>
+                <div style={{ flex: '0 0 90px' }}>Type</div>
+                <div style={{ flex: '0 0 160px' }}>Submitted</div>
+                <div style={{ flex: '0 0 100px' }}>Grade</div>
+                <div style={{ flex: '0 0 32px' }} />
+              </div>
               {filteredAssignments.map(assignment => {
                 const status = getStatus(assignment)
+                const submittedAt = assignment.submission?.submitted_at
+                  ? new Date(assignment.submission.submitted_at)
+                  : null
                 const dueDate = new Date(assignment.due_date)
-                const isOverdue = dueDate < new Date() && !assignment.submission
-                
+                const isQuiz = assignment.assignment_type === 'quiz'
+                const showGrade = !isQuiz || assignment.show_grades_to_students
+                const gradeStr = showGrade && assignment.submission?.grade !== null && assignment.submission?.grade !== undefined
+                  ? `${assignment.submission.grade} / ${assignment.max_points}`
+                  : '—'
+                const dateTimeStr = submittedAt
+                  ? `${submittedAt.toLocaleDateString()} ${submittedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                  : `Due: ${dueDate.toLocaleDateString()} ${dueDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                 return (
                   <Link
                     key={assignment.id}
                     href={`/dashboard/student/assignments/${assignment.id}`}
                     style={{
-                      background: 'white',
-                      borderRadius: '8px',
-                      padding: '1.5rem',
-                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-                      border: '1px solid #e5e7eb',
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '0.75rem 1rem',
                       textDecoration: 'none',
                       color: 'inherit',
-                      display: 'block',
-                      transition: 'transform 0.2s, box-shadow 0.2s',
+                      borderBottom: '1px solid #e5e7eb',
+                      transition: 'background 0.15s',
                       borderLeft: `4px solid ${getStatusColor(status)}`
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-2px)'
-                      e.currentTarget.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)'
-                      e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)'
-                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'white' }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                          <h3 style={{ fontSize: '1.125rem', fontWeight: 600, color: 'var(--text)', margin: 0 }}>
-                            {assignment.title}
-                          </h3>
-                          <span style={{
-                            padding: '0.25rem 0.5rem',
-                            borderRadius: '4px',
-                            fontSize: '0.75rem',
-                            fontWeight: 500,
-                            background: getStatusColor(status) + '20',
-                            color: getStatusColor(status)
-                          }}>
-                            {getStatusLabel(status)}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                          <strong>{assignment.course.code}</strong> - {assignment.course.name}
-                        </div>
-                        {assignment.description && (
-                          <p style={{ 
-                            fontSize: '0.875rem', 
-                            color: 'var(--text)', 
-                            marginBottom: '0.75rem',
-                            display: '-webkit-box',
-                            WebkitLineClamp: 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden'
-                          }}>
-                            {assignment.description}
-                          </p>
-                        )}
-                        <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                          <div>
-                            <strong>Due:</strong> {dueDate.toLocaleDateString()} {dueDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                          <div>
-                            <strong>Points:</strong> {assignment.max_points}
-                          </div>
-                          {assignment.assignment_type && (
-                            <div>
-                              <strong>Type:</strong> {assignment.assignment_type}
-                            </div>
-                          )}
-                          {assignment.submission?.grade !== null && assignment.submission?.grade !== undefined && (
-                            <div style={{ color: getStatusColor('graded'), fontWeight: 600 }}>
-                              <strong>Grade:</strong> {assignment.submission?.grade} / {assignment.max_points}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center' }}>
-                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20" style={{ color: 'var(--text-muted)' }}>
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </div>
+                    <div style={{ flex: '1 1 20%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{assignment.title}</span>
+                      <span style={{ flexShrink: 0, padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 500, background: getStatusColor(status) + '22', color: getStatusColor(status) }}>{getStatusLabel(status)}</span>
+                    </div>
+                    <div style={{ flex: '1 1 22%', minWidth: 0, fontSize: '0.875rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {assignment.course.code} – {assignment.course.name}
+                    </div>
+                    <div style={{ flex: '0 0 90px', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                      {assignment.assignment_type || '—'}
+                    </div>
+                    <div style={{ flex: '0 0 160px', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                      {dateTimeStr}
+                    </div>
+                    <div style={{ flex: '0 0 100px', fontSize: '0.875rem', fontWeight: showGrade && assignment.submission?.grade != null ? 600 : 400, color: showGrade && assignment.submission?.grade != null ? getStatusColor('graded') : 'var(--text-muted)' }}>
+                      {gradeStr}
+                    </div>
+                    <div style={{ flex: '0 0 32px', display: 'flex', justifyContent: 'center' }}>
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="18" height="18" style={{ color: 'var(--text-muted)' }}>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
                     </div>
                   </Link>
                 )

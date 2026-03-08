@@ -328,9 +328,11 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
   const leftPanel = (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0 }}>
       <div style={headerStyle}>
-        <Link href={backHref} style={{ color: 'white', display: 'flex', padding: '4px' }} aria-label="Back">
-          <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-        </Link>
+        <span className="inbox-hide-on-desktop">
+          <Link href={backHref} style={{ color: 'white', display: 'flex', padding: '4px' }} aria-label="Back">
+            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+          </Link>
+        </span>
         {showNewChat ? (
           <>
             <button type="button" onClick={() => { setShowNewChat(false); setSearchQuery(''); setSearchResults([]) }} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', padding: '4px', display: 'flex' }} aria-label="Close">
@@ -340,7 +342,7 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
           </>
         ) : (
           <>
-            <span style={{ fontWeight: 600, fontSize: '1rem' }}>Chats</span>
+            <span className="inbox-hide-on-desktop" style={{ fontWeight: 600, fontSize: '1rem' }}>Chats</span>
             <button type="button" onClick={() => setShowNewChat(true)} style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500 }}>
               New chat
             </button>

@@ -262,7 +262,7 @@ export default function GradesPage() {
               userName={userName}
               userInitials={userInitials}
               onLogout={() => {
-                supabase.auth.signOut()
+                import('@/lib/auth').then(({ logout }) => logout())
                 router.push('/')
                 router.refresh()
               }}

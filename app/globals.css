@@ -2235,4 +2235,8 @@ a:hover {
   .ai-helper-mobile-burger-bar {
     display: none !important;
   }
+  /* Inbox: hide "Chats" title and back arrow on desktop only */
+  .inbox-hide-on-desktop {
+    display: none !important;
+  }
 }

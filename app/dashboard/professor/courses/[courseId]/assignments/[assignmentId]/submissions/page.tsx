@@ -14,6 +14,7 @@ interface Assignment {
   max_points: number
   assignment_type: string | null
   instructions: string | null
+  show_grades_to_students?: boolean
 }
 
 interface EnrolledStudent {
@@ -56,6 +57,7 @@ export default function AssignmentSubmissionsPage() {
   const [gradeValue, setGradeValue] = useState(0)
   const [feedbackText, setFeedbackText] = useState('')
   const [viewingDocument, setViewingDocument] = useState<{ url: string; fileName: string } | null>(null)
+  const [releasingGrades, setReleasingGrades] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -255,6 +257,40 @@ export default function AssignmentSubmissionsPage() {
         <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
           {submissions.length} / {enrolledStudents.length} students submitted
         </p>
+        {assignment.assignment_type === 'quiz' && (
+          <div style={{ marginTop: '0.75rem' }}>
+            {assignment.show_grades_to_students ? (
+              <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                Grades and correct answers are visible to students.
+              </span>
+            ) : (
+              <button
+                type="button"
+                disabled={releasingGrades}
+                onClick={async () => {
+                  setReleasingGrades(true)
+                  try {
+                    const { error } = await supabase
+                      .from('assignments')
+                      .update({ show_grades_to_students: true })
+                      .eq('id', assignmentId)
+                    if (error) throw error
+                    setAssignment((a) => (a ? { ...a, show_grades_to_students: true } : null))
+                  } catch (e) {
+                    console.error(e)
+                    alert('Failed to release grades')
+                  } finally {
+                    setReleasingGrades(false)
+                  }
+                }}
+                className="btn-primary"
+                style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
+              >
+                {releasingGrades ? 'Releasing…' : 'Release grades and correct answers to students'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Students who didn't submit */}

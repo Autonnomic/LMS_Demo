@@ -131,7 +131,7 @@ export default function StudentAiHelper({ userId }: StudentAiHelperProps) {
         <textarea
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="e.g. Explain big-O notation, or ask about your courses (RAG coming soon)."
+          placeholder="e.g. Explain big-O notation, or ask about your courses."
           rows={2}
           style={{
             flex: 1,

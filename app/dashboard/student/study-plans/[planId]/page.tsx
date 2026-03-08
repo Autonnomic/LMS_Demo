@@ -143,13 +143,17 @@ export default function StudyPlanDetailPage() {
       const progress =
         totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0
 
+      const course: Course = Array.isArray(data.course)
+        ? (data.course[0] ?? { id: '', code: '', name: '' })
+        : (data.course ?? { id: '', code: '', name: '' })
+
       setPlan({
         id: data.id,
         topic: data.topic,
         totalDays: data.total_days,
         hoursPerDay: Number(data.hours_per_day),
         createdAt: data.created_at,
-        course: data.course,
+        course,
         items,
         progress,
         completedItems,
@@ -222,7 +226,7 @@ export default function StudyPlanDetailPage() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    const { logout } = await import('@/lib/auth'); await logout()
     router.push('/')
     router.refresh()
   }

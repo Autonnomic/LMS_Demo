@@ -45,6 +45,12 @@ interface AttendanceRecord {
   notes: string | null
 }
 
+interface QuizQuestion {
+  question: string
+  choices: string[]
+  correct_index: number
+}
+
 interface Assignment {
   id: string
   title: string
@@ -54,6 +60,8 @@ interface Assignment {
   assignment_type: string | null
   instructions: string | null
   submission_count?: number
+  quiz_questions?: QuizQuestion[] | null
+  show_grades_to_students?: boolean
 }
 
 interface CourseMaterial {
@@ -140,6 +148,8 @@ export default function ProfessorCourseDetail() {
     { name: 'Exam', type: 'exam', points: 300, description: 'Final exam' },
     { name: 'Lab', type: 'lab', points: 100, description: 'Laboratory assignment' }
   ])
+  const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([])
+  const [showGradesToStudents, setShowGradesToStudents] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -502,17 +512,35 @@ export default function ProfessorCourseDetail() {
       const assignmentTitle = newAssignment.title
       const assignmentDueDate = dueDateTime
 
+      const isQuiz = newAssignment.assignment_type === 'quiz'
+      const payload: Record<string, unknown> = {
+        course_id: courseId,
+        title: newAssignment.title,
+        description: newAssignment.description || null,
+        due_date: dueDateTime,
+        max_points: newAssignment.max_points,
+        assignment_type: newAssignment.assignment_type || null,
+        instructions: newAssignment.instructions || null
+      }
+      if (isQuiz) {
+        const valid = quizQuestions.filter((q) => q.question.trim() && q.choices.filter((c) => c.trim()).length >= 2)
+        if (valid.length === 0) {
+          alert('Quiz must have at least one question with at least two choices.')
+          return
+        }
+        payload.quiz_questions = valid.map((q) => {
+          const trimmed = q.choices.map((c) => c.trim()).filter(Boolean)
+          const correctText = (q.choices[q.correct_index] ?? '').trim()
+          let newCorrect = trimmed.indexOf(correctText)
+          if (newCorrect < 0) newCorrect = 0
+          return { question: q.question.trim(), choices: trimmed, correct_index: newCorrect }
+        })
+        payload.show_grades_to_students = false
+      }
+
       const { data: insertedAssignment, error } = await supabase
         .from('assignments')
-        .insert({
-          course_id: courseId,
-          title: newAssignment.title,
-          description: newAssignment.description || null,
-          due_date: dueDateTime,
-          max_points: newAssignment.max_points,
-          assignment_type: newAssignment.assignment_type || null,
-          instructions: newAssignment.instructions || null
-        })
+        .insert(payload)
         .select()
         .single()
 
@@ -528,6 +556,8 @@ export default function ProfessorCourseDetail() {
         assignment_type: '',
         instructions: ''
       })
+      setQuizQuestions([])
+      setShowGradesToStudents(false)
       await fetchAssignments()
       
       // Create notifications for all enrolled students
@@ -589,16 +619,33 @@ export default function ProfessorCourseDetail() {
         ? `${newAssignment.due_date}T${newAssignment.due_time}:00`
         : newAssignment.due_date
 
+      const updatePayload: Record<string, unknown> = {
+        title: newAssignment.title,
+        description: newAssignment.description || null,
+        due_date: dueDateTime,
+        max_points: newAssignment.max_points,
+        assignment_type: newAssignment.assignment_type || null,
+        instructions: newAssignment.instructions || null
+      }
+      if (newAssignment.assignment_type === 'quiz') {
+        const valid = quizQuestions.filter((q) => q.question.trim() && q.choices.filter((c) => c.trim()).length >= 2)
+        if (valid.length === 0) {
+          alert('Quiz must have at least one question with at least two choices.')
+          return
+        }
+        updatePayload.quiz_questions = valid.map((q) => {
+          const trimmed = q.choices.map((c) => c.trim()).filter(Boolean)
+          const correctText = (q.choices[q.correct_index] ?? '').trim()
+          let newCorrect = trimmed.indexOf(correctText)
+          if (newCorrect < 0) newCorrect = 0
+          return { question: q.question.trim(), choices: trimmed, correct_index: newCorrect }
+        })
+        updatePayload.show_grades_to_students = showGradesToStudents
+      }
+
       const { error } = await supabase
         .from('assignments')
-        .update({
-          title: newAssignment.title,
-          description: newAssignment.description || null,
-          due_date: dueDateTime,
-          max_points: newAssignment.max_points,
-          assignment_type: newAssignment.assignment_type || null,
-          instructions: newAssignment.instructions || null
-        })
+        .update(updatePayload)
         .eq('id', editingAssignment.id)
 
       if (error) throw error
@@ -614,6 +661,8 @@ export default function ProfessorCourseDetail() {
         assignment_type: '',
         instructions: ''
       })
+      setQuizQuestions([])
+      setShowGradesToStudents(false)
       await fetchAssignments()
     } catch (error) {
       console.error('Error updating assignment:', error)
@@ -666,6 +715,17 @@ export default function ProfessorCourseDetail() {
       assignment_type: assignment.assignment_type || '',
       instructions: assignment.instructions || ''
     })
+    const qq = assignment.quiz_questions
+    if (Array.isArray(qq) && qq.length > 0) {
+      setQuizQuestions(qq.map((q: QuizQuestion) => ({
+        question: q.question || '',
+        choices: Array.isArray(q.choices) ? [...q.choices] : ['', ''],
+        correct_index: typeof q.correct_index === 'number' ? q.correct_index : 0
+      })))
+    } else {
+      setQuizQuestions([{ question: '', choices: ['', ''], correct_index: 0 }])
+    }
+    setShowGradesToStudents(assignment.show_grades_to_students ?? false)
     setShowAssignmentForm(true)
   }
 
@@ -846,7 +906,7 @@ export default function ProfessorCourseDetail() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    const { logout } = await import('@/lib/auth'); await logout()
     router.push('/')
     router.refresh()
   }
@@ -1520,6 +1580,8 @@ export default function ProfessorCourseDetail() {
                       assignment_type: '',
                       instructions: ''
                     })
+                    setQuizQuestions([])
+                    setShowGradesToStudents(false)
                     setShowAssignmentForm(true)
                   }}
                   className="btn-primary"
@@ -1647,7 +1709,13 @@ export default function ProfessorCourseDetail() {
                         </label>
                         <select
                           value={newAssignment.assignment_type}
-                          onChange={(e) => setNewAssignment({ ...newAssignment, assignment_type: e.target.value })}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setNewAssignment({ ...newAssignment, assignment_type: v })
+                            if (v === 'quiz' && quizQuestions.length === 0) {
+                              setQuizQuestions([{ question: '', choices: ['', ''], correct_index: 0 }])
+                            }
+                          }}
                           className="form-control"
                         >
                           <option value="">Select type</option>
@@ -1675,6 +1743,164 @@ export default function ProfessorCourseDetail() {
                       />
                     </div>
 
+                    {newAssignment.assignment_type === 'quiz' && (
+                      <div className="form-group" style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                          <label style={{ fontWeight: 600, color: 'var(--text)' }}>Quiz questions</label>
+                          <button
+                            type="button"
+                            onClick={() => setQuizQuestions([...quizQuestions, { question: '', choices: ['', ''], correct_index: 0 }])}
+                            className="btn-secondary"
+                            style={{ padding: '0.35rem 0.75rem', fontSize: '0.875rem' }}
+                          >
+                            + Add question
+                          </button>
+                        </div>
+                        {quizQuestions.map((q, qIdx) => (
+                          <div key={qIdx} style={{ marginBottom: '1.25rem', padding: '1rem', background: '#fff', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                              <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>Question {qIdx + 1}</span>
+                              <button
+                                type="button"
+                                onClick={() => setQuizQuestions(quizQuestions.filter((_, i) => i !== qIdx))}
+                                style={{ color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem' }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                            <input
+                              type="text"
+                              value={q.question}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                setQuizQuestions(quizQuestions.map((qu, i) => i === qIdx ? { ...qu, question: val } : qu))
+                              }}
+                              onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+                              className="form-control"
+                              placeholder="Question text"
+                              style={{ marginTop: '0.5rem', marginBottom: '0.75rem' }}
+                            />
+                            <div style={{ marginBottom: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Choices (select the correct one)</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                              {(Array.isArray(q.choices) ? q.choices : ['', '']).map((choice, cIdx) => {
+                                const isCorrect = q.correct_index === cIdx
+                                const letter = String.fromCharCode(65 + cIdx)
+                                return (
+                                  <div
+                                    key={cIdx}
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '0.75rem',
+                                      padding: '0.5rem 0.75rem',
+                                      borderRadius: '6px',
+                                      border: `1px solid ${isCorrect ? '#10b981' : '#e5e7eb'}`,
+                                      background: isCorrect ? 'rgba(16, 185, 129, 0.06)' : '#fff',
+                                    }}
+                                  >
+                                    <span style={{ flexShrink: 0, fontWeight: 600, width: '1.5rem', color: 'var(--text)' }}>{letter}.</span>
+                                    <input
+                                      type="radio"
+                                      name={`correct-${qIdx}`}
+                                      checked={isCorrect}
+                                      onChange={() => {
+                                        setQuizQuestions(quizQuestions.map((qu, i) => i === qIdx ? { ...qu, correct_index: cIdx } : qu))
+                                      }}
+                                      style={{
+                                        flexShrink: 0,
+                                        width: '12px',
+                                        height: '12px',
+                                        margin: 0,
+                                        cursor: 'pointer',
+                                      }}
+                                    />
+                                    <input
+                                      type="text"
+                                      value={typeof choice === 'string' ? choice : ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value
+                                        setQuizQuestions(quizQuestions.map((qu, i) => {
+                                          if (i !== qIdx) return qu
+                                          const ch = Array.isArray(qu.choices) ? [...qu.choices] : ['', '']
+                                          while (ch.length <= cIdx) ch.push('')
+                                          ch[cIdx] = val
+                                          return { ...qu, choices: ch }
+                                        }))
+                                      }}
+                                      onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()}
+                                      placeholder={`Type choice ${letter} here...`}
+                                      style={{
+                                        flex: '1 1 0',
+                                        width: '100%',
+                                        minWidth: '200px',
+                                        maxWidth: '100%',
+                                        padding: '0.5rem 0.75rem',
+                                        fontSize: '0.875rem',
+                                        border: `1px solid ${isCorrect ? '#10b981' : '#d1d5db'}`,
+                                        borderRadius: '6px',
+                                        color: isCorrect ? '#059669' : 'var(--text)',
+                                        background: '#fff',
+                                        boxSizing: 'border-box',
+                                      }}
+                                    />
+                                    {(Array.isArray(q.choices) ? q.choices : []).length > 2 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const currChoices = Array.isArray(q.choices) ? [...q.choices] : ['', '']
+                                          const choices = currChoices.filter((_, i) => i !== cIdx)
+                                          const correct_index = q.correct_index === cIdx ? 0 : q.correct_index > cIdx ? q.correct_index - 1 : q.correct_index
+                                          setQuizQuestions(quizQuestions.map((qu, i) => i === qIdx ? { ...qu, choices, correct_index } : qu))
+                                        }}
+                                        style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                        title="Remove choice"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                          <polyline points="3 6 5 6 21 6" />
+                                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                          <line x1="10" y1="11" x2="10" y2="17" />
+                                          <line x1="14" y1="11" x2="14" y2="17" />
+                                        </svg>
+                                      </button>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                            </div>
+                            {(Array.isArray(q.choices) ? q.choices : []).length < 6 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const currChoices = Array.isArray(q.choices) ? [...q.choices] : ['']
+                                  setQuizQuestions(quizQuestions.map((qu, i) => i === qIdx ? { ...qu, choices: [...currChoices, ''] } : qu))
+                                }}
+                                className="btn-secondary"
+                                style={{ marginTop: '0.35rem', padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                              >
+                                + Add choice
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                        {quizQuestions.length === 0 && (
+                          <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>Add at least one question for this quiz.</div>
+                        )}
+                      </div>
+                    )}
+
+                    {editingAssignment?.assignment_type === 'quiz' && (
+                      <div className="form-group" style={{ marginBottom: '1rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={showGradesToStudents}
+                            onChange={(e) => setShowGradesToStudents(e.target.checked)}
+                          />
+                          <span style={{ fontWeight: 500, color: 'var(--text)' }}>Release grades and correct answers to students</span>
+                        </label>
+                      </div>
+                    )}
+
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button type="submit" className="btn-primary">
                         {editingAssignment ? 'Update Assignment' : 'Create Assignment'}
@@ -1693,6 +1919,8 @@ export default function ProfessorCourseDetail() {
                             assignment_type: '',
                             instructions: ''
                           })
+                          setQuizQuestions([])
+                          setShowGradesToStudents(false)
                         }}
                         className="btn-secondary"
                       >

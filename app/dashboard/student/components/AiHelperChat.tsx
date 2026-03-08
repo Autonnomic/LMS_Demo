@@ -530,7 +530,7 @@ export default function AiHelperChat({ userId }: AiHelperChatProps) {
               <div style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>💬</div>
               <div style={{ fontWeight: 500, color: 'var(--text)' }}>AI study helper</div>
               <p style={{ maxWidth: '22em', margin: 0, lineHeight: 1.5 }}>
-                Ask anything — general concepts or course-specific (RAG when available).
+                Ask anything — general concepts or course-specific.
               </p>
             </div>
           )}

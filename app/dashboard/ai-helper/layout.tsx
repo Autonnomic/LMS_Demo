@@ -184,7 +184,7 @@ export default function AiHelperLayout({ children }: { children: ReactNode }) {
           userName={userInfo.userName}
           userInitials={userInfo.userInitials}
           onLogout={() => {
-            supabase.auth.signOut()
+            import('@/lib/auth').then(({ logout }) => logout())
             router.push('/')
             router.refresh()
           }}

@@ -554,25 +554,27 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
             {showNewChat ? (
               <>
                 <div style={chatStyles.header}>
-                  <button
-                    onClick={() => {
-                      setShowNewChat(false)
-                      setSearchQuery('')
-                      setSearchResults([])
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'white',
-                      cursor: 'pointer',
-                      padding: '4px',
-                      display: 'flex',
-                    }}
-                  >
-                    <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </button>
+                  <span className="inbox-hide-on-desktop">
+                    <button
+                      onClick={() => {
+                        setShowNewChat(false)
+                        setSearchQuery('')
+                        setSearchResults([])
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'white',
+                        cursor: 'pointer',
+                        padding: '4px',
+                        display: 'flex',
+                      }}
+                    >
+                      <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                  </span>
                   <span style={{ fontWeight: 600, fontSize: '1rem' }}>New chat</span>
                   <div style={{ width: 24 }} />
                 </div>
@@ -634,10 +636,11 @@ export default function Chat({ userId, userRole, startWithUserId: propStartWithU
             ) : !selectedConversation ? (
               <>
                 <div style={chatStyles.header}>
-                  <span style={{ fontWeight: 600, fontSize: '1rem' }}>Chats</span>
+                  <span className="inbox-hide-on-desktop" style={{ fontWeight: 600, fontSize: '1rem' }}>Chats</span>
                   <button
                     onClick={() => setShowNewChat(true)}
                     style={{
+                      marginLeft: 'auto',
                       background: 'rgba(255,255,255,0.2)',
                       border: 'none',
                       color: 'white',

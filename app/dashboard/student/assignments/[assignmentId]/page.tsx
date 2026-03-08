@@ -10,6 +10,12 @@ import { ChatProvider } from '../../components/ChatContext'
 import DocumentViewer from '../../components/DocumentViewer'
 import UserMenu from '../../../components/UserMenu'
 
+interface QuizQuestion {
+  question: string
+  choices: string[]
+  correct_index: number
+}
+
 interface Assignment {
   id: string
   title: string
@@ -23,6 +29,8 @@ interface Assignment {
     code: string
     name: string
   }
+  quiz_questions?: QuizQuestion[] | null
+  show_grades_to_students?: boolean
 }
 
 interface Submission {
@@ -35,6 +43,7 @@ interface Submission {
   status: string
   grade: number | null
   feedback: string | null
+  quiz_answers?: number[] | null
 }
 
 export default function AssignmentDetailPage() {
@@ -55,6 +64,7 @@ export default function AssignmentDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [viewingDocument, setViewingDocument] = useState<{ url: string; fileName: string } | null>(null)
+  const [quizSelections, setQuizSelections] = useState<number[]>([])
 
   useEffect(() => {
     fetchAssignmentData()
@@ -108,7 +118,7 @@ export default function AssignmentDetailPage() {
         setCourses(courseList)
       }
 
-      // Fetch assignment
+      // Fetch assignment (include quiz fields for quiz type)
       const { data: assignmentData } = await supabase
         .from('assignments')
         .select(`
@@ -119,6 +129,8 @@ export default function AssignmentDetailPage() {
           max_points,
           assignment_type,
           instructions,
+          quiz_questions,
+          show_grades_to_students,
           course:courses (
             id,
             code,
@@ -129,7 +141,18 @@ export default function AssignmentDetailPage() {
         .single()
 
       if (assignmentData) {
-        setAssignment(assignmentData as Assignment)
+        const course = Array.isArray(assignmentData.course)
+          ? assignmentData.course[0]
+          : assignmentData.course
+        const normalized: Assignment = {
+          ...assignmentData,
+          course: course ?? { id: '', code: '', name: '' },
+        }
+        setAssignment(normalized)
+        const a = normalized
+        if (a.assignment_type === 'quiz' && Array.isArray(a.quiz_questions) && a.quiz_questions.length > 0) {
+          setQuizSelections(a.quiz_questions.map(() => -1))
+        }
       }
 
       // Fetch submission
@@ -187,6 +210,41 @@ export default function AssignmentDetailPage() {
   function isPdfFile(file: File): boolean {
     const name = (file.name || '').toLowerCase()
     return name.endsWith('.pdf') || file.type === 'application/pdf'
+  }
+
+  async function handleSubmitQuiz(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setSuccess(null)
+    if (!assignment || assignment.assignment_type !== 'quiz' || !assignment.quiz_questions?.length) return
+    if (quizSelections.some((s) => s < 0)) {
+      setError('Please answer all questions before submitting.')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch(`/api/student/assignments/${assignmentId}/submit-quiz`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
+        },
+        credentials: 'include',
+        body: JSON.stringify({ quiz_answers: quizSelections }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.error || 'Failed to submit quiz')
+        return
+      }
+      setSuccess('Quiz submitted successfully.')
+      await fetchAssignmentData()
+    } catch (err) {
+      setError('Failed to submit quiz')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -361,7 +419,7 @@ export default function AssignmentDetailPage() {
               userName={userName}
               userInitials={userInitials}
               onLogout={() => {
-                supabase.auth.signOut()
+                import('@/lib/auth').then(({ logout }) => logout())
                 router.push('/')
                 router.refresh()
               }}
@@ -468,8 +526,79 @@ export default function AssignmentDetailPage() {
             )}
           </div>
 
-          {/* Submission Form - show when no submission or when one update is still allowed */}
-          {(!submission || submission.updated_at == null) ? (
+          {/* Quiz: take once or already submitted */}
+          {assignment.assignment_type === 'quiz' && (
+            <>
+              {!submission ? (
+                <div style={{
+                  background: 'white',
+                  borderRadius: '8px',
+                  padding: '2rem',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                  border: '1px solid #e5e7eb'
+                }}>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem', color: 'var(--text)' }}>
+                    Take Quiz
+                  </h2>
+                  <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+                    You have one attempt. Answer all questions and submit.
+                  </p>
+                  {Array.isArray(assignment.quiz_questions) && assignment.quiz_questions.length > 0 ? (
+                    <form onSubmit={handleSubmitQuiz}>
+                      {assignment.quiz_questions.map((q, qIdx) => (
+                        <div key={qIdx} style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                          <div style={{ fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>
+                            {qIdx + 1}. {q.question}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            {(q.choices ?? []).map((choice, cIdx) => (
+                              <label key={cIdx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                                <input
+                                  type="radio"
+                                  name={`q-${qIdx}`}
+                                  checked={quizSelections[qIdx] === cIdx}
+                                  onChange={() => {
+                                    const next = [...quizSelections]
+                                    next[qIdx] = cIdx
+                                    setQuizSelections(next)
+                                  }}
+                                />
+                                <span style={{ color: 'var(--text)' }}>{choice}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      <button
+                        type="submit"
+                        className="btn-primary"
+                        disabled={submitting || quizSelections.some((s) => s < 0)}
+                      >
+                        {submitting ? 'Submitting...' : 'Submit Quiz'}
+                      </button>
+                    </form>
+                  ) : (
+                    <p style={{ color: 'var(--text-muted)' }}>No questions in this quiz.</p>
+                  )}
+                </div>
+              ) : (
+                <div style={{
+                  background: 'white',
+                  borderRadius: '8px',
+                  padding: '2rem',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                  border: '1px solid #e5e7eb'
+                }}>
+                  <p style={{ fontSize: '0.9375rem', fontWeight: 500, color: 'var(--text)' }}>
+                    You have already submitted this quiz. Only one attempt is allowed.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Non-quiz: Submission Form - show when no submission or when one update is still allowed */}
+          {assignment.assignment_type !== 'quiz' && (!submission || submission.updated_at == null) && (
           <div style={{
             background: 'white',
             borderRadius: '8px',
@@ -549,7 +678,9 @@ export default function AssignmentDetailPage() {
               </div>
             </form>
           </div>
-          ) : (
+          )}
+
+          {assignment.assignment_type !== 'quiz' && submission && submission.updated_at != null && (
           <div style={{
             background: 'white',
             borderRadius: '8px',
@@ -585,64 +716,115 @@ export default function AssignmentDetailPage() {
                     {formatDate(submission.submitted_at)}
                   </div>
                 </div>
-                {submission.file_name && (
-                  <div>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                      Submitted File
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-                      <button
-                        type="button"
-                        onClick={() => submission.file_url && setViewingDocument({ url: submission.file_url, fileName: submission.file_name || 'document' })}
-                        disabled={!submission.file_url}
-                        style={{
-                          padding: '0.375rem 0.75rem',
-                          background: 'var(--teal-bright)',
-                          color: 'white',
-                          border: 'none',
+
+                {assignment.assignment_type === 'quiz' ? (
+                  <>
+                    {!assignment.show_grades_to_students ? (
+                      <div style={{ padding: '1rem', background: '#fef3c7', borderRadius: '6px', color: 'var(--text)' }}>
+                        Submitted. Grade and correct answers are hidden until your instructor releases them.
+                      </div>
+                    ) : (
+                      <>
+                        {submission.grade !== null && (
+                          <div>
+                            <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                              Grade
+                            </div>
+                            <div style={{ fontSize: '1.25rem', fontWeight: 600, color: '#10b981' }}>
+                              {submission.grade} / {assignment.max_points}
+                            </div>
+                          </div>
+                        )}
+                        {Array.isArray(assignment.quiz_questions) && assignment.quiz_questions.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                              Correct answers
+                            </div>
+                            {assignment.quiz_questions.map((q, qIdx) => {
+                              const studentChoice = submission.quiz_answers?.[qIdx]
+                              const correct = studentChoice === q.correct_index
+                              const correctChoice = (q.choices ?? [])[q.correct_index]
+                              return (
+                                <div key={qIdx} style={{ marginBottom: '1rem', padding: '0.75rem', background: correct ? '#ecfdf5' : '#fef2f2', borderRadius: '6px', border: `1px solid ${correct ? '#10b981' : '#ef4444'}` }}>
+                                  <div style={{ fontWeight: 500, marginBottom: '0.35rem', color: 'var(--text)' }}>{q.question}</div>
+                                  <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                                    Correct answer: {correctChoice ?? '—'}
+                                  </div>
+                                  {studentChoice !== undefined && (
+                                    <div style={{ fontSize: '0.875rem', marginTop: '0.25rem', color: correct ? '#059669' : '#dc2626' }}>
+                                      {correct ? 'You got it right.' : `You selected: ${(q.choices ?? [])[studentChoice] ?? '—'}`}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {submission.file_name && (
+                      <div>
+                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                          Submitted File
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={() => submission.file_url && setViewingDocument({ url: submission.file_url, fileName: submission.file_name || 'document' })}
+                            disabled={!submission.file_url}
+                            style={{
+                              padding: '0.375rem 0.75rem',
+                              background: 'var(--teal-bright)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              fontSize: '0.875rem',
+                              cursor: submission.file_url ? 'pointer' : 'not-allowed'
+                            }}
+                          >
+                            View
+                          </button>
+                          <a 
+                            href={submission.file_url || '#'} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            style={{ color: 'var(--teal-bright)', textDecoration: 'none', fontSize: '0.875rem' }}
+                          >
+                            {submission.file_name} ↗
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                    {submission.grade !== null && (
+                      <div>
+                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                          Grade
+                        </div>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 600, color: '#10b981' }}>
+                          {submission.grade} / {assignment.max_points}
+                        </div>
+                      </div>
+                    )}
+                    {submission.feedback && (
+                      <div>
+                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                          Feedback
+                        </div>
+                        <div style={{ 
+                          padding: '1rem', 
+                          background: '#f9fafb', 
                           borderRadius: '6px',
-                          fontSize: '0.875rem',
-                          cursor: submission.file_url ? 'pointer' : 'not-allowed'
-                        }}
-                      >
-                        View
-                      </button>
-                      <a 
-                        href={submission.file_url || '#'} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        style={{ color: 'var(--teal-bright)', textDecoration: 'none', fontSize: '0.875rem' }}
-                      >
-                        {submission.file_name} ↗
-                      </a>
-                    </div>
-                  </div>
-                )}
-                {submission.grade !== null && (
-                  <div>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                      Grade
-                    </div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 600, color: '#10b981' }}>
-                      {submission.grade} / {assignment.max_points}
-                    </div>
-                  </div>
-                )}
-                {submission.feedback && (
-                  <div>
-                    <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                      Feedback
-                    </div>
-                    <div style={{ 
-                      padding: '1rem', 
-                      background: '#f9fafb', 
-                      borderRadius: '6px',
-                      color: 'var(--text)',
-                      whiteSpace: 'pre-wrap'
-                    }}>
-                      {submission.feedback}
-                    </div>
-                  </div>
+                          color: 'var(--text)',
+                          whiteSpace: 'pre-wrap'
+                        }}>
+                          {submission.feedback}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>

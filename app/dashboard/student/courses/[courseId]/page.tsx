@@ -144,11 +144,13 @@ function CourseDetailPageContent() {
   useEffect(() => {
     if (activeCourseTab === 'materials' && courseId) {
       setMaterialsLoading(true)
-      supabase
-        .from('course_materials')
-        .select('*')
-        .eq('course_id', courseId)
-        .order('created_at', { ascending: false })
+      Promise.resolve(
+        supabase
+          .from('course_materials')
+          .select('*')
+          .eq('course_id', courseId)
+          .order('created_at', { ascending: false })
+      )
         .then(({ data, error }) => {
           if (!error) setCourseMaterials(data || [])
           else setCourseMaterials([])
@@ -160,9 +162,10 @@ function CourseDetailPageContent() {
   useEffect(() => {
     if (activeCourseTab === 'announcements' && courseId) {
       setAnnouncementsLoading(true)
-      supabase
-        .from('announcements')
-        .select(`
+      Promise.resolve(
+        supabase
+          .from('announcements')
+          .select(`
           id,
           course_id,
           author_id,
@@ -171,8 +174,9 @@ function CourseDetailPageContent() {
           created_at,
           author:user_profiles(first_name, last_name)
         `)
-        .eq('course_id', courseId)
-        .order('created_at', { ascending: false })
+          .eq('course_id', courseId)
+          .order('created_at', { ascending: false })
+      )
         .then(({ data, error }) => {
           if (error) {
             setAnnouncements([])
@@ -261,7 +265,11 @@ function CourseDetailPageContent() {
           .select('assignment_id, id, status, grade')
           .eq('student_id', studentId)
       ])
-      if (courseRes.data) setCourse(courseRes.data)
+      if (courseRes.data) {
+        const raw = courseRes.data as { professor?: unknown } & Omit<Course, 'professor'>
+        const professor = Array.isArray(raw.professor) ? raw.professor[0] ?? null : (raw.professor ?? null) as Course['professor']
+        setCourse({ ...raw, professor })
+      }
       if (scheduleRes.data) setSchedule(scheduleRes.data)
       if (topicsRes.data) setUpcomingTopics(topicsRes.data)
       if (studentsRes.error) {
@@ -322,7 +330,7 @@ function CourseDetailPageContent() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    const { logout } = await import('@/lib/auth'); await logout()
     router.push('/')
     router.refresh()
   }
@@ -671,8 +679,10 @@ function CourseDetailPageContent() {
                       )}
                       <button
                         onClick={() => {
-                          setStartWithUserId(course.professor.id)
-                          setOpenChat(true)
+                          if (course.professor) {
+                            setStartWithUserId(course.professor.id)
+                            setOpenChat(true)
+                          }
                         }}
                         style={{
                           marginTop: '0.5rem',

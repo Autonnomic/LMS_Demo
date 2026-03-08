@@ -383,7 +383,7 @@ export default function ProfessorCalendarPage() {
   }
 
   async function handleLogout() {
-    await supabase.auth.signOut()
+    const { logout } = await import('@/lib/auth'); await logout()
     router.push('/')
     router.refresh()
   }

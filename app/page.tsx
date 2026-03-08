@@ -17,6 +17,15 @@ export default function LoginPage() {
     e.preventDefault()
     setError(null)
     setLoading(true)
+
+    // Same browser/tab: if already logged in as this user (e.g. another tab), block before calling server
+    const { data: { session: existingSession } } = await supabase.auth.getSession()
+    if (existingSession?.user?.email?.toLowerCase() === email.trim().toLowerCase()) {
+      setLoading(false)
+      setError('This account is already logged in in another tab or window. Please use that tab or log out there first.')
+      return
+    }
+
     const { data, error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -27,11 +36,35 @@ export default function LoginPage() {
       return
     }
     const userId = data.user?.id
-    if (!userId) {
+    const session = data.session
+    if (!userId || !session) {
       setLoading(false)
       setError('Could not get user.')
       return
     }
+
+    // Single-session: if already logged in on another device, block this login
+    const registerRes = await fetch('/api/auth/register-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      credentials: 'include',
+      body: JSON.stringify({ refresh_token: session.refresh_token }),
+    })
+    if (registerRes.status === 409) {
+      await supabase.auth.signOut()
+      setLoading(false)
+      setError('This account is already logged in on another device. Please log out there first.')
+      return
+    }
+    if (!registerRes.ok) {
+      setLoading(false)
+      setError('Could not complete sign-in. Please try again.')
+      return
+    }
+
     const { data: profile, error: profileError } = await supabase
       .from('user_profiles')
       .select('role, must_reset_password')

@@ -1,7 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import type { User } from '@supabase/supabase-js'
 
+/** Server client with anon key; uses cookies for auth when available. */
 export async function createClient() {
   const cookieStore = await cookies()
   return createServerClient(
@@ -36,4 +38,12 @@ export async function getAuthUser(request?: Request | null): Promise<User | null
   }
   const { data: { user } } = await supabase.auth.getUser()
   return user ?? null
+}
+
+/** Server-only client with service role; bypasses RLS. Use only for trusted server-side reads (e.g. checking user role). */
+export function createServiceRoleClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for createServiceRoleClient')
+  return createSupabaseClient(url, key, { auth: { persistSession: false } })
 }
