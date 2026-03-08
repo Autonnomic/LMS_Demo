@@ -1512,6 +1512,17 @@ a:hover {
   box-shadow: 0 0 0 3px rgba(8, 146, 165, 0.1);
 }
 
+/* Fee number inputs: no spinners */
+.fee-number-input::-webkit-inner-spin-button,
+.fee-number-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.fee-number-input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* Mobile bottom nav (icons only) - hidden on desktop */
 .canvas-sidebar-mobile-bottom {
   display: none;

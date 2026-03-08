@@ -18,16 +18,41 @@ export default function LoginPage() {
     setError(null)
     setLoading(true)
 
+    const input = email.trim()
+    let loginEmail: string
+
+    if (input.includes('@')) {
+      loginEmail = input
+    } else {
+      const res = await fetch('/api/auth/email-by-roll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roll_number: input }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setLoading(false)
+        setError(data.error || 'No account found for this roll number.')
+        return
+      }
+      loginEmail = data.email
+      if (!loginEmail) {
+        setLoading(false)
+        setError('No account found for this roll number.')
+        return
+      }
+    }
+
     // Same browser/tab: if already logged in as this user (e.g. another tab), block before calling server
     const { data: { session: existingSession } } = await supabase.auth.getSession()
-    if (existingSession?.user?.email?.toLowerCase() === email.trim().toLowerCase()) {
+    if (existingSession?.user?.email?.toLowerCase() === loginEmail.toLowerCase()) {
       setLoading(false)
       setError('This account is already logged in in another tab or window. Please use that tab or log out there first.')
       return
     }
 
     const { data, error: signInError } = await supabase.auth.signInWithPassword({
-      email,
+      email: loginEmail,
       password,
     })
     if (signInError) {
@@ -102,15 +127,15 @@ export default function LoginPage() {
         {error && <p className="auth-error">{error}</p>}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="email">Email or roll number</label>
             <input
               id="email"
-              type="email"
-              placeholder="you@example.com"
+              type="text"
+              placeholder="you@example.com or Gt001"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              autoComplete="email"
+              autoComplete="username"
               disabled={loading}
             />
           </div>

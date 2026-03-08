@@ -4,6 +4,7 @@ export type Profile = {
   first_name: string | null
   last_name: string | null
   role: 'student' | 'professor' | 'admin' | null
+  roll_number?: string | null
   created_at: string
 }
 

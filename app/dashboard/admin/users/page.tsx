@@ -28,7 +28,7 @@ export default function AdminUsersPage() {
     if (!profile || profile.role !== 'admin') return
     const { data: profilesData } = await supabase
       .from('user_profiles')
-      .select('id, email, first_name, last_name, role, created_at')
+      .select('id, email, first_name, last_name, role, roll_number, created_at')
       .order('created_at', { ascending: false })
     if (profilesData) {
       setProfiles(profilesData as Profile[])
@@ -81,7 +81,8 @@ export default function AdminUsersPage() {
       : allUsers.filter((p) => {
           const name = [p.first_name, p.last_name].filter(Boolean).join(' ').toLowerCase()
           const email = (p.email ?? '').toLowerCase()
-          return name.includes(userSearchLower) || email.includes(userSearchLower)
+          const roll = (p.roll_number ?? '').toLowerCase()
+          return name.includes(userSearchLower) || email.includes(userSearchLower) || roll.includes(userSearchLower)
         })
 
   if (loading) {
@@ -224,6 +225,7 @@ export default function AdminUsersPage() {
                 <tr>
                   <th>Email</th>
                   <th>Name</th>
+                  <th>Roll no.</th>
                   <th>Role</th>
                   <th>Change role</th>
                 </tr>
@@ -233,6 +235,9 @@ export default function AdminUsersPage() {
                   <tr key={p.id}>
                     <td>{p.email || p.id}</td>
                     <td>{[p.first_name, p.last_name].filter(Boolean).join(' ') || '-'}</td>
+                    <td style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)' }}>
+                      {p.role === 'student' ? (p.roll_number ?? '—') : '—'}
+                    </td>
                     <td>
                       <span style={{
                         padding: '0.25rem 0.5rem',

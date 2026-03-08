@@ -32,6 +32,7 @@ export async function POST(request: Request) {
     const meta = user.user_metadata ?? {}
     let firstName = (meta.first_name as string)?.trim() || null
     let lastName = (meta.last_name as string)?.trim() || null
+    const rollNumber = (meta.roll_number as string)?.trim() || null
     if (firstName == null && lastName == null) {
       const fullName = (meta.full_name as string) || ''
       const nameParts = fullName.trim().split(/\s+/)
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
           email: user.email ?? null,
           first_name: firstName,
           last_name: lastName,
+          roll_number: rollNumber,
           role: 'student',
         })
       if (insertError) {
@@ -64,7 +66,7 @@ export async function POST(request: Request) {
 
     const { error: updateError } = await adminClient
       .from('user_profiles')
-      .update({ role: 'student' })
+      .update({ role: 'student', ...(rollNumber != null && { roll_number: rollNumber }) })
       .eq('id', user.id)
 
     if (updateError) {

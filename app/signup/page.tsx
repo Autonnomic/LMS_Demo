@@ -9,6 +9,7 @@ export default function SignupPage() {
   const router = useRouter()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
+  const [rollNumber, setRollNumber] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -39,6 +40,7 @@ export default function SignupPage() {
           first_name: firstName.trim(),
           last_name: lastName.trim(),
           full_name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+          roll_number: rollNumber.trim() || null,
         },
       },
     })
@@ -96,6 +98,18 @@ export default function SignupPage() {
               onChange={(e) => setLastName(e.target.value)}
               required
               autoComplete="family-name"
+              disabled={loading}
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="rollNumber">Roll number</label>
+            <input
+              id="rollNumber"
+              type="text"
+              placeholder="e.g. Gt001"
+              value={rollNumber}
+              onChange={(e) => setRollNumber(e.target.value)}
+              autoComplete="off"
               disabled={loading}
             />
           </div>
