@@ -29,6 +29,8 @@ export default function StudentProfilePage() {
   const [assignmentsTotal, setAssignmentsTotal] = useState(0)
   const [studyPlans, setStudyPlans] = useState<StudyPlanWithProgress[]>([])
   const [attendancePresentCount, setAttendancePresentCount] = useState(0)
+  const [feeDetails, setFeeDetails] = useState<{ amount_due: number; amount_paid: number; due_date: string | null; updated_at: string | null } | null>(null)
+  const [feeDetailsLoading, setFeeDetailsLoading] = useState(true)
 
   useEffect(() => {
     async function loadShell() {
@@ -52,11 +54,11 @@ export default function StudentProfilePage() {
         .select('course:courses ( id, code, name )')
         .eq('student_id', user.id)
         .eq('status', 'enrolled')
-      const studentCourses = (regsData || [])
-        .map((r: { course?: { id: string; code: string; name: string } }) => r.course)
-        .filter(Boolean) as { id: string; code: string; name: string }[]
-      setSidebarCourses(studentCourses)
-      setEnrolledCoursesCount(studentCourses.length)
+      const sidebarCoursesList = (regsData || [])
+        .map((r: any) => r.course as { id: string; code: string; name: string } | null)
+        .filter((c): c is { id: string; code: string; name: string } => !!c)
+      setSidebarCourses(sidebarCoursesList)
+      setEnrolledCoursesCount(sidebarCoursesList.length)
       setLoading(false)
     }
     loadShell()
@@ -76,7 +78,7 @@ export default function StudentProfilePage() {
       if (cancelled) return
       if (gradesData?.length) {
         setGradesCount(gradesData.length)
-        const gradesList = gradesData as GradeRow[]
+        const gradesList = (gradesData as unknown) as GradeRow[]
         const courseMap = new Map<string, GradeRow[]>()
         gradesList.forEach((g) => {
           if (g.course) {
@@ -128,12 +130,38 @@ export default function StudentProfilePage() {
       if (!cancelled) {
         const { count: attendanceCount } = await supabase.from('attendance').select('*', { count: 'exact', head: true }).eq('student_id', user.id).eq('status', 'present')
         setAttendancePresentCount(attendanceCount ?? 0)
-        setMetricsLoading(false)
       }
+      if (!cancelled) setMetricsLoading(false)
     }
     loadMetrics()
     return () => { cancelled = true }
   }, [profile?.id])
+
+  useEffect(() => {
+    if (!profile || profile.role !== 'student') return
+    let cancelled = false
+    async function loadFees() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const headers: Record<string, string> = {}
+        if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+        const res = await fetch('/api/student/fees', { credentials: 'include', headers })
+        if (cancelled) return
+        if (res.ok) {
+          const data = await res.json()
+          setFeeDetails({ amount_due: data.amount_due ?? 0, amount_paid: data.amount_paid ?? 0, due_date: data.due_date ?? null, updated_at: data.updated_at ?? null })
+        } else {
+          setFeeDetails(null)
+        }
+      } catch {
+        if (!cancelled) setFeeDetails(null)
+      } finally {
+        if (!cancelled) setFeeDetailsLoading(false)
+      }
+    }
+    loadFees()
+    return () => { cancelled = true }
+  }, [profile?.id, profile?.role])
 
   if (loading) {
     return (
@@ -171,6 +199,8 @@ export default function StudentProfilePage() {
             studyPlans={studyPlans}
             attendancePresentCount={attendancePresentCount}
             metricsLoading={metricsLoading}
+            feeDetails={feeDetails}
+            feeDetailsLoading={feeDetailsLoading}
           />
         </main>
       </div>

@@ -401,51 +401,6 @@ export default function GradesPage() {
             </div>
           )}
 
-          {/* Grade Trends Chart */}
-          {filteredSummaries.length > 0 && (
-            <div style={{ marginBottom: '2rem' }}>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--navy-dark)', marginBottom: '1rem' }}>
-                Grade Trends
-              </h2>
-              <div style={{
-                background: 'white',
-                borderRadius: '8px',
-                padding: '1.5rem',
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-                border: '1px solid #e5e7eb'
-              }}>
-                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                  {filteredSummaries.map(summary => (
-                    <div key={summary.courseId} style={{ flex: '1', minWidth: '200px' }}>
-                      <div style={{ marginBottom: '0.5rem', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>
-                        {summary.courseCode}
-                      </div>
-                      <div style={{
-                        height: '8px',
-                        background: '#e5e7eb',
-                        borderRadius: '4px',
-                        overflow: 'hidden',
-                        marginBottom: '0.5rem'
-                      }}>
-                        <div
-                          style={{
-                            height: '100%',
-                            width: `${Math.min(summary.averageGrade, 100)}%`,
-                            background: getGradeColor(summary.averageGrade),
-                            transition: 'width 0.3s ease'
-                          }}
-                        />
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        {summary.averageGrade.toFixed(1)}%
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Detailed Grades Table */}
           <div>
             <h2 style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--navy-dark)', marginBottom: '1rem' }}>

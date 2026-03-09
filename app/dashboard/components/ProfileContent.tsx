@@ -39,6 +39,8 @@ interface ProfileContentProps {
   studyPlans?: StudyPlanWithProgress[]
   attendancePresentCount?: number
   metricsLoading?: boolean
+  feeDetails?: { amount_due: number; amount_paid: number; due_date: string | null; updated_at: string | null } | null
+  feeDetailsLoading?: boolean
   // Professor
   coursesTaughtCount?: number
   totalStudentsTaught?: number
@@ -97,6 +99,8 @@ export default function ProfileContent({
   studyPlans = [],
   attendancePresentCount = 0,
   metricsLoading = false,
+  feeDetails = null,
+  feeDetailsLoading = false,
   coursesTaughtCount = 0,
   totalStudentsTaught = 0,
   totalUsers = 0,
@@ -181,6 +185,73 @@ export default function ProfileContent({
                 {metricCard('Days present', attendancePresentCount, 'Attendance (present)')}
               </div>
             )}
+
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--navy-dark)', marginBottom: '1rem' }}>Fee details</h2>
+            {feeDetailsLoading ? (
+              <div className="skeleton-card skeleton" style={{ padding: '1.25rem 1.5rem', minHeight: 120, marginBottom: '2rem', maxWidth: 480 }} />
+            ) : (
+              <div
+                style={{
+                  maxWidth: 480,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 12,
+                  padding: '1.25rem 1.5rem',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                  marginBottom: '2rem',
+                }}
+              >
+                {feeDetails ? (
+                  <dl style={{ display: 'grid', gap: '1rem', margin: 0 }}>
+                    <div>
+                      <dt style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Amount due (total)</dt>
+                      <dd style={{ margin: 0, fontSize: '1.125rem', fontWeight: 600, color: 'var(--text)' }}>
+                        ₹{feeDetails.amount_due.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Amount paid</dt>
+                      <dd style={{ margin: 0, fontSize: '1.125rem', fontWeight: 600, color: 'var(--text)' }}>
+                        ₹{feeDetails.amount_paid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Balance due</dt>
+                      <dd style={{ margin: 0, fontSize: '1.125rem', fontWeight: 600, color: Math.max(0, feeDetails.amount_due - feeDetails.amount_paid) > 0 ? 'var(--text)' : '#10b981' }}>
+                        ₹{Math.max(0, feeDetails.amount_due - feeDetails.amount_paid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </dd>
+                    </div>
+                    {(() => {
+                      const balanceDue = Math.max(0, feeDetails.amount_due - feeDetails.amount_paid)
+                      if (balanceDue === 0 && feeDetails.updated_at) {
+                        return (
+                          <div>
+                            <dt style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Payment date</dt>
+                            <dd style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text)' }}>
+                              {new Date(feeDetails.updated_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </dd>
+                          </div>
+                        )
+                      }
+                      if (balanceDue > 0 && feeDetails.due_date) {
+                        return (
+                          <div>
+                            <dt style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Due date</dt>
+                            <dd style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text)' }}>
+                              {new Date(feeDetails.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </dd>
+                          </div>
+                        )
+                      }
+                      return null
+                    })()}
+                  </dl>
+                ) : (
+                  <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.95rem' }}>No fee record found.</p>
+                )}
+              </div>
+            )}
+
             {!metricsLoading && studyPlans.length > 0 && (
               <>
                 <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--navy-dark)', marginBottom: '1rem' }}>Study plan progress</h2>
@@ -229,8 +300,8 @@ export default function ProfileContent({
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '1rem', marginBottom: '2rem', maxWidth: 640 }}>
-                {metricCard('Total users', totalUsers, 'All accounts', '/dashboard/admin/users')}
-                {metricCard('Professors', totalProfessors, 'Instructor accounts', '/dashboard/admin/users')}
+                {metricCard('Total users', totalUsers, 'All accounts', '/dashboard/admin/students')}
+                {metricCard('Professors', totalProfessors, 'Instructor accounts', '/dashboard/admin/professors')}
                 {metricCard('Courses', totalCourses, 'All courses', '/dashboard/admin/courses')}
                 {metricCard('Pending enrollments', pendingEnrollments, 'Awaiting approval', '/dashboard/admin/enrollments')}
                 {metricCard('Allowed signup emails', allowedSignupEmailsCount, 'Can create account', '/dashboard/admin/signup-emails')}

@@ -82,7 +82,7 @@ export async function GET(
     const studentIds = [...new Set(regs.map((r) => r.student_id))]
     const { data: profiles } = await admin
       .from('user_profiles')
-      .select('id, first_name, last_name, email')
+      .select('id, first_name, last_name, email, roll_number')
       .in('id', studentIds)
 
     const profileMap = new Map((profiles || []).map((p) => [p.id, p]))
@@ -94,6 +94,7 @@ export async function GET(
         first_name: p?.first_name ?? null,
         last_name: p?.last_name ?? null,
         email: p?.email ?? null,
+        roll_number: p?.roll_number ?? null,
         registration_id: reg.id,
         registered_at: reg.registered_at,
       }

@@ -214,7 +214,7 @@ function ProfessorDashboardContent({
     <main className="canvas-main-content">
       <div className="canvas-topbar">
         <div className="canvas-topbar-brand">
-          <h1 className="canvas-topbar-title">My Courses</h1>
+          <h1 className="canvas-topbar-title">Dashboard</h1>
           <img src="/logo.png" alt="" className="canvas-topbar-logo-mobile" />
         </div>
         <div className="canvas-topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>

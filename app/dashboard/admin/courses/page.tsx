@@ -9,6 +9,7 @@ export default function AdminCoursesPage() {
   const [courses, setCourses] = useState<Course[]>([])
   const [professors, setProfessors] = useState<Profile[]>([])
   const [courseProfessorsByCourse, setCourseProfessorsByCourse] = useState<Record<string, Profile[]>>({})
+  const [professorEligibilityByCourse, setProfessorEligibilityByCourse] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(true)
   const [assigningProfessor, setAssigningProfessor] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -68,6 +69,22 @@ export default function AdminCoursesPage() {
         }
         setCourseProfessorsByCourse(map)
       }
+    }
+
+    const { data: eligibilityRows } = await supabase
+      .from('professor_course_eligibility')
+      .select('course_id, professor_id')
+
+    if (eligibilityRows) {
+      const elig: Record<string, string[]> = {}
+      for (const row of eligibilityRows as { course_id: string; professor_id: string }[]) {
+        if (!row.course_id || !row.professor_id) continue
+        if (!elig[row.course_id]) elig[row.course_id] = []
+        if (!elig[row.course_id].includes(row.professor_id)) elig[row.course_id].push(row.professor_id)
+      }
+      setProfessorEligibilityByCourse(elig)
+    } else {
+      setProfessorEligibilityByCourse({})
     }
   }
 
@@ -336,11 +353,20 @@ export default function AdminCoursesPage() {
                           style={{ width: '100%' }}
                         >
                           <option value="">Select Professor</option>
-                          {professors.map((prof) => (
-                            <option key={prof.id} value={prof.id}>
-                              {[prof.first_name, prof.last_name].filter(Boolean).join(' ') || prof.email || prof.id}
-                            </option>
-                          ))}
+                          {(() => {
+                            const eligibleIds = professorEligibilityByCourse[course.id] ?? []
+                            const eligibleProfs = professors.filter((prof) => eligibleIds.includes(prof.id))
+                            const currentProfId = course.professor_id
+                            const options =
+                              currentProfId && !eligibleProfs.some((p) => p.id === currentProfId)
+                                ? [...eligibleProfs, professors.find((p) => p.id === currentProfId)].filter(Boolean)
+                                : eligibleProfs
+                            return options.map((prof) => (
+                              <option key={prof.id} value={prof.id}>
+                                {[prof.first_name, prof.last_name].filter(Boolean).join(' ') || prof.email || prof.id}
+                              </option>
+                            ))
+                          })()}
                         </select>
                       </td>
                       <td>

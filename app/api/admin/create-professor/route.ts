@@ -35,11 +35,13 @@ export async function POST(request: Request) {
       tempPassword,
       firstName,
       lastName,
+      eligibleCourseIds,
     } = body as {
       email?: string
       tempPassword?: string
       firstName?: string
       lastName?: string
+      eligibleCourseIds?: string[]
     }
 
     if (!email || typeof email !== 'string' || !email.includes('@')) {
@@ -97,6 +99,26 @@ export async function POST(request: Request) {
         { error: profileError.message },
         { status: 400 }
       )
+    }
+
+    if (Array.isArray(eligibleCourseIds) && eligibleCourseIds.length > 0) {
+      const rows = eligibleCourseIds
+        .filter((id) => typeof id === 'string' && id.trim().length > 0)
+        .map((courseId) => ({
+          professor_id: newUser.user.id,
+          course_id: courseId,
+        }))
+      if (rows.length > 0) {
+        const { error: eligError } = await adminClient
+          .from('professor_course_eligibility')
+          .upsert(rows, { onConflict: 'professor_id,course_id' })
+        if (eligError) {
+          return NextResponse.json(
+            { error: `Professor created but eligibility failed: ${eligError.message}` },
+            { status: 400 }
+          )
+        }
+      }
     }
 
     return NextResponse.json({

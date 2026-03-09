@@ -31,6 +31,7 @@ interface Student {
   first_name: string | null
   last_name: string | null
   email: string | null
+  roll_number?: string | null
 }
 
 interface EnrolledStudent extends Student {
@@ -150,6 +151,18 @@ export default function ProfessorCourseDetail() {
   ])
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([])
   const [showGradesToStudents, setShowGradesToStudents] = useState(false)
+  const [attendanceSummary, setAttendanceSummary] = useState<{
+    studentId: string
+    roll_number?: string | null
+    first_name: string | null
+    last_name: string | null
+    present: number
+    total: number
+    percentage: number
+  }[]>([])
+  const [attendanceSummaryLoading, setAttendanceSummaryLoading] = useState(false)
+  const [showAttendanceDetails, setShowAttendanceDetails] = useState(false)
+  const [exportingGrades, setExportingGrades] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -382,10 +395,15 @@ export default function ProfessorCourseDetail() {
       ])
       if (courseRes.data) setCourse(courseRes.data)
       if (scheduleRes.data) setSchedule(scheduleRes.data)
+      let enrolledList: EnrolledStudent[] = []
       if (Array.isArray(enrolledRes)) {
-        setEnrolledStudents(enrolledRes as EnrolledStudent[])
+        enrolledList = enrolledRes as EnrolledStudent[]
+        setEnrolledStudents(enrolledList)
       }
       await fetchAttendanceForDate(attendanceDate)
+      if (enrolledList.length > 0) {
+        await fetchAttendanceSummary(enrolledList)
+      }
     } catch (error) {
       console.error('Error fetching course data:', error)
     }
@@ -403,6 +421,58 @@ export default function ProfessorCourseDetail() {
     } catch (error) {
       console.error('Error fetching grades:', error)
       setCourseGrades([])
+    }
+  }
+
+  async function fetchAttendanceSummary(enrolled: EnrolledStudent[]) {
+    try {
+      setAttendanceSummaryLoading(true)
+      const { data, error } = await supabase
+        .from('attendance')
+        .select('student_id, status')
+        .eq('course_id', courseId)
+
+      if (error) throw error
+
+      const counts: Record<string, { present: number; total: number }> = {}
+      for (const row of (data || []) as { student_id: string; status: string }[]) {
+        const sid = row.student_id
+        if (!counts[sid]) counts[sid] = { present: 0, total: 0 }
+        counts[sid].total += 1
+        if (row.status === 'present') counts[sid].present += 1
+      }
+
+      const summary = enrolled.map((stu) => {
+        const c = counts[stu.id] || { present: 0, total: 0 }
+        const pct = c.total > 0 ? Math.round((c.present / c.total) * 100) : 0
+        return {
+          studentId: stu.id,
+          roll_number: stu.roll_number ?? null,
+          first_name: stu.first_name ?? null,
+          last_name: stu.last_name ?? null,
+          present: c.present,
+          total: c.total,
+          percentage: pct,
+        }
+      })
+
+      summary.sort((a, b) => {
+        const ra = (a.roll_number || '').toString().toLowerCase()
+        const rb = (b.roll_number || '').toString().toLowerCase()
+        if (ra && rb && ra !== rb) return ra.localeCompare(rb, undefined, { numeric: true, sensitivity: 'base' })
+        if (ra && !rb) return -1
+        if (!ra && rb) return 1
+        const nameA = `${a.first_name || ''} ${a.last_name || ''}`.trim().toLowerCase()
+        const nameB = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase()
+        return nameA.localeCompare(nameB)
+      })
+
+      setAttendanceSummary(summary)
+    } catch (error) {
+      console.error('Error fetching attendance summary:', error)
+      setAttendanceSummary([])
+    } finally {
+      setAttendanceSummaryLoading(false)
     }
   }
 
@@ -839,6 +909,92 @@ export default function ProfessorCourseDetail() {
     }
   }
 
+  function handlePrintAttendanceSummary() {
+    if (typeof window === 'undefined') return
+    window.print()
+  }
+
+  function handleExportAttendanceSummary() {
+    if (typeof document === 'undefined' || !attendanceSummary.length) return
+    const header = ['Roll number', 'Student name', 'Days present', 'Total days', 'Attendance %']
+    const rows = attendanceSummary.map((row) => {
+      const name = `${row.first_name || ''} ${row.last_name || ''}`.trim()
+      return [
+        row.roll_number || '',
+        name,
+        String(row.present),
+        String(row.total),
+        row.total > 0 ? String(row.percentage) : '',
+      ]
+    })
+    const csv = [header, ...rows]
+      .map((cols) => cols.map((v) => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(','))
+      .join('\r\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    const code = course?.code || 'course'
+    a.href = url
+    a.download = `${code}-attendance.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  function handleExportGradesCsv() {
+    if (typeof document === 'undefined' || assignments.length === 0 || enrolledStudents.length === 0) return
+    setExportingGrades(true)
+    try {
+      const headers = ['Student', ...assignments.map((a) => a.title), 'Average %']
+      const rows = enrolledStudents.map((student) => {
+        const stuGrades = courseGrades.filter((g) => g.student_id === student.id)
+        let totalPoints = 0
+        let earnedPoints = 0
+        const cells: string[] = []
+        assignments.forEach((a) => {
+          const g = stuGrades.find((gr) => gr.assignment_name === a.title)
+          if (!g) {
+            cells.push('')
+          } else {
+            const max = g.max_grade ?? a.max_points
+            totalPoints += max || 0
+            earnedPoints += Number(g.grade)
+            cells.push(`${Number(g.grade)} / ${max}`)
+          }
+        })
+        const avgPct = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : null
+        const name = `${student.first_name || ''} ${student.last_name || ''}`.trim() || student.email || '—'
+        return [
+          name,
+          ...cells,
+          avgPct != null ? String(avgPct) : '',
+        ]
+      })
+
+      const csv = [headers, ...rows]
+        .map((cols) =>
+          cols
+            .map((v) => '"' + String(v ?? '').replace(/"/g, '""') + '"')
+            .join(',')
+        )
+        .join('\r\n')
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      const code = course?.code || 'course'
+      a.href = url
+      a.download = `${code}-grades.csv`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } finally {
+      setExportingGrades(false)
+    }
+  }
+
   async function handleDeleteSchedule(scheduleId: string) {
     if (!confirm('Are you sure you want to delete this schedule?')) return
 
@@ -1058,7 +1214,6 @@ export default function ProfessorCourseDetail() {
                 <div className="course-detail-header-meta">
                   <span>{course.credits} Credits</span>
                   {course.semester && <span>{course.semester} {course.academic_year}</span>}
-                  <span>{enrolledStudents.length} Students</span>
                 </div>
               </div>
 
@@ -1180,36 +1335,120 @@ export default function ProfessorCourseDetail() {
                       <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Create assignments and grade submissions to see analytics here.</p>
                     )}
                   </div>
+
                 </div>
 
                 <div className="course-detail-sidebar">
                   <div className="course-info-card">
-                    <h3>Enrolled Students ({enrolledStudents.length})</h3>
-                    {enrolledStudents.length > 0 ? (
-                      <div className="student-list">
-                        {enrolledStudents.slice(0, 10).map((student) => (
-                          <div key={student.id} className="student-item">
-                            <div className="student-avatar">
-                              {(student.first_name?.charAt(0) || '') + (student.last_name?.charAt(0) || '')}
-                            </div>
-                            <div className="student-info">
-                              <div className="student-name">
-                                {student.first_name} {student.last_name}
-                              </div>
-                            </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div>
+                        <h3 style={{ marginBottom: '0.1rem' }}>Attendance report</h3>
+                        {(() => {
+                          const totals = attendanceSummary.reduce(
+                            (acc, r) => ({ present: acc.present + r.present, total: acc.total + r.total }),
+                            { present: 0, total: 0 }
+                          )
+                          const pct = totals.total > 0 ? Math.round((totals.present / totals.total) * 100) : null
+                          return (
+                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                              Overall attendance:{' '}
+                              <span style={{ fontWeight: 600, color: pct != null ? 'var(--text)' : 'var(--text-muted)' }}>
+                                {pct != null ? `${pct}%` : '—'}
+                              </span>
+                            </p>
+                          )
+                        })()}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
+                        {showAttendanceDetails && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={handleExportAttendanceSummary}
+                              style={{
+                                padding: '0.3rem 0.6rem',
+                                fontSize: '0.8rem',
+                                borderRadius: '6px',
+                                border: '1px solid var(--teal-bright)',
+                                background: 'var(--teal-bright)',
+                                color: 'white',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Export
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setShowAttendanceDetails((v) => !v)}
+                          aria-label={showAttendanceDetails ? 'Hide attendance details' : 'Show attendance details'}
+                          style={{
+                            padding: '0.2rem 0.4rem',
+                            borderRadius: '999px',
+                            border: '1px solid var(--border)',
+                            background: 'var(--bg)',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem',
+                          }}
+                        >
+                          {showAttendanceDetails ? '▲' : '▼'}
+                        </button>
+                      </div>
+                    </div>
+                    {showAttendanceDetails && (
+                      <>
+                        {attendanceSummaryLoading ? (
+                          <p style={{ color: 'var(--text-muted)' }}>Loading attendance…</p>
+                        ) : attendanceSummary.length > 0 ? (
+                          <div style={{ overflowX: 'auto', marginTop: '0.25rem' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 360 }}>
+                              <thead>
+                                <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                                  <th style={{ textAlign: 'left', padding: '0.5rem', fontSize: '0.8rem' }}>Roll no.</th>
+                                  <th style={{ textAlign: 'left', padding: '0.5rem', fontSize: '0.8rem' }}>Student</th>
+                                  <th style={{ textAlign: 'right', padding: '0.5rem', fontSize: '0.8rem' }}>Present</th>
+                                  <th style={{ textAlign: 'right', padding: '0.5rem', fontSize: '0.8rem' }}>Total</th>
+                                  <th style={{ textAlign: 'right', padding: '0.5rem', fontSize: '0.8rem' }}>%</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {attendanceSummary.map((row) => {
+                                  const name = `${row.first_name || ''} ${row.last_name || ''}`.trim() || '—'
+                                  return (
+                                    <tr key={row.studentId} style={{ borderBottom: '1px solid var(--border)' }}>
+                                      <td style={{ padding: '0.5rem', fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                                        {row.roll_number || '—'}
+                                      </td>
+                                      <td style={{ padding: '0.5rem', fontSize: '0.9rem' }}>{name}</td>
+                                      <td style={{ padding: '0.5rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.present}</td>
+                                      <td style={{ padding: '0.5rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.total}</td>
+                                      <td
+                                        style={{
+                                          padding: '0.5rem',
+                                          textAlign: 'right',
+                                          fontVariantNumeric: 'tabular-nums',
+                                          color: row.total > 0 && row.percentage < 75 ? '#ef4444' : 'var(--text)',
+                                        }}
+                                      >
+                                        {row.total > 0 ? `${row.percentage}%` : '—'}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
                           </div>
-                        ))}
-                        {enrolledStudents.length > 10 && (
-                          <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                            +{enrolledStudents.length - 10} more
+                        ) : (
+                          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                            No attendance records yet for this course.
                           </p>
                         )}
-                      </div>
-                    ) : (
-                      <p style={{ color: 'var(--text-muted)' }}>No students enrolled</p>
+                      </>
                     )}
                   </div>
                 </div>
+
               </div>
             </div>
           )}
@@ -1250,39 +1489,55 @@ export default function ProfessorCourseDetail() {
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                          <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: 600 }}>Roll no.</th>
                           <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: 600 }}>Student</th>
                           <th style={{ textAlign: 'center', padding: '0.75rem', fontWeight: 600 }}>Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {enrolledStudents.map((student) => {
-                          const currentStatus = attendanceRecords[student.id]?.status || 'present'
-                          return (
-                            <tr key={student.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                              <td style={{ padding: '0.75rem' }}>
-                                {student.first_name} {student.last_name}
-                              </td>
-                              <td style={{ padding: '0.75rem', textAlign: 'center' }}>
-                                <select
-                                  value={currentStatus}
-                                  onChange={(e) => updateAttendanceStatus(student.id, e.target.value)}
-                                  style={{
-                                    padding: '0.5rem',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '6px',
-                                    fontSize: '0.875rem',
-                                    cursor: 'pointer'
-                                  }}
-                                >
-                                  <option value="present">Present</option>
-                                  <option value="absent">Absent</option>
-                                  <option value="late">Late</option>
-                                  <option value="excused">Excused</option>
-                                </select>
-                              </td>
-                            </tr>
-                          )
-                        })}
+                        {[...enrolledStudents]
+                          .slice()
+                          .sort((a, b) => {
+                            const ra = (a.roll_number || '').toString().toLowerCase()
+                            const rb = (b.roll_number || '').toString().toLowerCase()
+                            if (ra && rb && ra !== rb) return ra.localeCompare(rb, undefined, { numeric: true, sensitivity: 'base' })
+                            if (ra && !rb) return -1
+                            if (!ra && rb) return 1
+                            const nameA = `${a.first_name || ''} ${a.last_name || ''}`.trim().toLowerCase()
+                            const nameB = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase()
+                            return nameA.localeCompare(nameB)
+                          })
+                          .map((student) => {
+                            const currentStatus = attendanceRecords[student.id]?.status || 'present'
+                            return (
+                              <tr key={student.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td style={{ padding: '0.75rem', fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                                  {student.roll_number || '—'}
+                                </td>
+                                <td style={{ padding: '0.75rem' }}>
+                                  {student.first_name} {student.last_name}
+                                </td>
+                                <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                  <select
+                                    value={currentStatus}
+                                    onChange={(e) => updateAttendanceStatus(student.id, e.target.value)}
+                                    style={{
+                                      padding: '0.5rem',
+                                      border: '1px solid var(--border)',
+                                      borderRadius: '6px',
+                                      fontSize: '0.875rem',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    <option value="present">Present</option>
+                                    <option value="absent">Absent</option>
+                                    <option value="late">Late</option>
+                                    <option value="excused">Excused</option>
+                                  </select>
+                                </td>
+                              </tr>
+                            )
+                          })}
                       </tbody>
                     </table>
                   </div>
@@ -2060,7 +2315,29 @@ export default function ProfessorCourseDetail() {
           {/* Grades & Analytics Tab */}
           {activeTab === 'grades' && (
             <div className="professor-tab-content">
-              <h3 style={{ marginBottom: '1.5rem', color: 'var(--navy-dark)' }}>Grades &amp; Analytics</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0, color: 'var(--navy-dark)' }}>Grades &amp; Analytics</h3>
+                {assignments.length > 0 && enrolledStudents.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleExportGradesCsv}
+                    disabled={exportingGrades}
+                    style={{
+                      padding: '0.4rem 0.9rem',
+                      borderRadius: 6,
+                      border: '1px solid var(--teal-bright)',
+                      background: 'var(--teal-bright)',
+                      color: 'white',
+                      fontSize: '0.875rem',
+                      fontWeight: 500,
+                      cursor: exportingGrades ? 'default' : 'pointer',
+                      opacity: exportingGrades ? 0.7 : 1,
+                    }}
+                  >
+                    {exportingGrades ? 'Exporting…' : 'Export grades'}
+                  </button>
+                )}
+              </div>
 
               {/* Analytics cards */}
               {(() => {
@@ -2137,21 +2414,36 @@ export default function ProfessorCourseDetail() {
 
               {/* Grades table */}
               <div style={{ overflowX: 'auto' }}>
-                <table className="table" style={{ minWidth: 480 }}>
+                <table className="table" style={{ minWidth: 560, tableLayout: 'auto' }}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>Student</th>
+                      <th style={{ textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'var(--navy-dark)', zIndex: 1 }}>
+                        Student
+                      </th>
                       {assignments.map((a) => (
-                        <th key={a.id} style={{ textAlign: 'center', whiteSpace: 'nowrap', maxWidth: 120 }} title={a.title}>
-                          {a.title.length > 18 ? a.title.slice(0, 16) + '…' : a.title}
+                        <th
+                          key={a.id}
+                          style={{
+                            textAlign: 'center',
+                            whiteSpace: 'nowrap',
+                            minWidth: 110,
+                            maxWidth: 160,
+                            padding: '0.35rem 0.5rem',
+                            fontSize: '0.8rem',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                          title={a.title}
+                        >
+                          {a.title.length > 20 ? a.title.slice(0, 18) + '…' : a.title}
                         </th>
                       ))}
-                      <th style={{ textAlign: 'center', whiteSpace: 'nowrap', fontWeight: 600 }}>Average</th>
+                      <th style={{ textAlign: 'center', whiteSpace: 'nowrap', fontWeight: 600, minWidth: 90 }}>Average</th>
                     </tr>
                     {/* Class average row */}
                     {assignments.length > 0 && (
                       <tr style={{ background: 'var(--surface-hover)', fontSize: '0.85rem' }}>
-                        <td style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Class avg</td>
+                        <td style={{ color: 'var(--text-muted)', fontWeight: 600, position: 'sticky', left: 0, background: 'var(--surface-hover)', zIndex: 1 }}>Class avg</td>
                         {assignments.map((a) => {
                           const gs = courseGrades.filter((g) => g.assignment_name === a.title)
                           const total = gs.reduce((s, g) => s + (g.max_grade || 0), 0)
@@ -2190,7 +2482,7 @@ export default function ProfessorCourseDetail() {
                         const avgPct = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : null
                         return (
                           <tr key={student.id}>
-                            <td style={{ whiteSpace: 'nowrap' }}>
+                            <td style={{ whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'white', zIndex: 1 }}>
                               {[student.first_name, student.last_name].filter(Boolean).join(' ') || student.email || '—'}
                             </td>
                             {assignments.map((a) => {

@@ -22,6 +22,7 @@ interface EnrolledStudent {
   first_name: string | null
   last_name: string | null
   email: string | null
+  roll_number?: string | null
   registration_id: string
   registered_at: string
 }
@@ -302,7 +303,8 @@ export default function AssignmentSubmissionsPage() {
           <ul style={{ margin: 0, paddingLeft: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.9rem', color: 'var(--text)' }}>
             {notSubmitted.map((s) => (
               <li key={s.id}>
-                {[s.first_name, s.last_name].filter(Boolean).join(' ').trim() || '—'} {s.email && <span style={{ color: 'var(--text-muted)' }}>({s.email})</span>}
+                {[s.first_name, s.last_name].filter(Boolean).join(' ').trim() || '—'}
+                {s.roll_number ? ` — ${s.roll_number}` : (s.email ? ` (${s.email})` : '')}
               </li>
             ))}
           </ul>

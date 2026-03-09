@@ -127,7 +127,7 @@ export default function LoginPage() {
         {error && <p className="auth-error">{error}</p>}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="email">Email or roll number</label>
+            <label htmlFor="email">Username</label>
             <input
               id="email"
               type="text"

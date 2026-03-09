@@ -78,6 +78,15 @@ interface Announcement {
   author?: { first_name: string | null; last_name: string | null } | null
 }
 
+interface CourseGradeRow {
+  id: string
+  assignment_name: string
+  grade: number
+  max_grade: number | null
+  assignment_type: string | null
+  graded_at: string | null
+}
+
 function CourseDetailPageContent() {
   const router = useRouter()
   const params = useParams()
@@ -94,12 +103,14 @@ function CourseDetailPageContent() {
   const [userInitials, setUserInitials] = useState<string>('')
   const [currentUserId, setCurrentUserId] = useState<string>('')
   const [userRole, setUserRole] = useState<'student' | 'professor'>('student')
-  const [activeCourseTab, setActiveCourseTab] = useState<'overview' | 'materials' | 'announcements'>('overview')
+  const [activeCourseTab, setActiveCourseTab] = useState<'overview' | 'assignments' | 'materials' | 'announcements' | 'grades'>('overview')
   const [courseMaterials, setCourseMaterials] = useState<CourseMaterial[]>([])
   const [materialsLoading, setMaterialsLoading] = useState(false)
   const [viewingMaterial, setViewingMaterial] = useState<{ url: string; fileName: string } | null>(null)
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [announcementsLoading, setAnnouncementsLoading] = useState(false)
+  const [courseGrades, setCourseGrades] = useState<CourseGradeRow[]>([])
+  const [gradesLoading, setGradesLoading] = useState(false)
 
   const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -191,6 +202,23 @@ function CourseDetailPageContent() {
         .finally(() => setAnnouncementsLoading(false))
     }
   }, [activeCourseTab, courseId])
+
+  useEffect(() => {
+    if (activeCourseTab === 'grades' && courseId && currentUserId) {
+      setGradesLoading(true)
+      void supabase
+        .from('grades')
+        .select('id, assignment_name, grade, max_grade, assignment_type, graded_at')
+        .eq('course_id', courseId)
+        .eq('student_id', currentUserId)
+        .order('graded_at', { ascending: false })
+        .then(({ data, error }) => {
+          if (!error) setCourseGrades((data || []) as CourseGradeRow[])
+          else setCourseGrades([])
+        })
+        .then(() => setGradesLoading(false), () => setGradesLoading(false))
+    }
+  }, [activeCourseTab, courseId, currentUserId])
 
   function getMaterialUrl(filePath: string): string {
     const { data } = supabase.storage.from('course-materials').getPublicUrl(filePath)
@@ -508,6 +536,22 @@ function CourseDetailPageContent() {
             </button>
             <button
               type="button"
+              onClick={() => setActiveCourseTab('assignments')}
+              style={{
+                padding: '0.5rem 1rem',
+                border: 'none',
+                background: activeCourseTab === 'assignments' ? 'var(--teal-bright)' : 'var(--surface)',
+                color: activeCourseTab === 'assignments' ? 'white' : 'var(--text)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 500,
+                fontSize: '0.9rem'
+              }}
+            >
+              Assignments
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveCourseTab('materials')}
               style={{
                 padding: '0.5rem 1rem',
@@ -538,6 +582,22 @@ function CourseDetailPageContent() {
             >
               Announcements
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveCourseTab('grades')}
+              style={{
+                padding: '0.5rem 1rem',
+                border: 'none',
+                background: activeCourseTab === 'grades' ? 'var(--teal-bright)' : 'var(--surface)',
+                color: activeCourseTab === 'grades' ? 'white' : 'var(--text)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: 500,
+                fontSize: '0.9rem'
+              }}
+            >
+              Grades
+            </button>
           </div>
 
           {activeCourseTab === 'overview' && (
@@ -565,9 +625,154 @@ function CourseDetailPageContent() {
                 )}
               </div>
 
-              {/* Assignments for this course */}
+              {/* Pending assignments only on overview */}
               <div className="course-info-card">
-                <h3>Assignments</h3>
+                <h3>Pending assignments</h3>
+                {(() => {
+                  const pendingAssignments = courseAssignments.filter((a) => getAssignmentStatus(a) === 'pending')
+                  return pendingAssignments.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {pendingAssignments.map((assignment) => {
+                      const status = getAssignmentStatus(assignment)
+                      const statusColor =
+                        status === 'graded'
+                          ? '#10b981'
+                          : status === 'submitted'
+                            ? '#3b82f6'
+                            : status === 'overdue'
+                              ? '#ef4444'
+                              : '#f59e0b'
+                      return (
+                        <Link
+                          key={assignment.id}
+                          href={`/dashboard/student/assignments/${assignment.id}`}
+                          style={{
+                            display: 'block',
+                            padding: '0.75rem 1rem',
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: '8px',
+                            textDecoration: 'none',
+                            color: 'var(--text)',
+                            transition: 'border-color 0.2s, box-shadow 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--teal-bright)'
+                            e.currentTarget.style.boxShadow = '0 0 0 1px var(--teal-bright)'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = ''
+                            e.currentTarget.style.boxShadow = ''
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: '0.9375rem', marginBottom: '0.25rem' }}>
+                                {assignment.title}
+                              </div>
+                              {assignment.description && (
+                                <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {assignment.description}
+                                </p>
+                              )}
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.375rem' }}>
+                                Due {formatDate(assignment.due_date)} · {assignment.max_points} pts
+                              </div>
+                            </div>
+                            <span
+                              style={{
+                                fontSize: '0.75rem',
+                                fontWeight: 500,
+                                color: statusColor,
+                                flexShrink: 0
+                              }}
+                            >
+                              {getStatusLabel(status)}
+                            </span>
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p style={{ color: 'var(--text-muted)' }}>No pending assignments</p>
+                )
+                })()}
+              </div>
+
+              {/* Upcoming Topics */}
+              {upcomingTopics.length > 0 && (
+                <div className="course-info-card">
+                  <h3>Upcoming Topics</h3>
+                  <div>
+                    {upcomingTopics.map((topic) => (
+                      <div key={topic.id} className="topic-item">
+                        <div className="topic-title">{topic.title}</div>
+                        {topic.description && (
+                          <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                            {topic.description}
+                          </p>
+                        )}
+                        <div className="topic-date">{formatDate(topic.scheduled_date)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="course-detail-sidebar">
+              {/* Professor */}
+              {course.professor && (
+                <div className="course-info-card">
+                  <h3>Instructor</h3>
+                  <div className="professor-card">
+                    <div className="professor-avatar">
+                      {getInitials(course.professor.first_name, course.professor.last_name)}
+                    </div>
+                    <div className="professor-info">
+                      <h4>
+                        {course.professor.first_name} {course.professor.last_name}
+                      </h4>
+                      <p>Professor</p>
+                      {course.professor.email && (
+                        <p style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
+                          {course.professor.email}
+                        </p>
+                      )}
+                      <button
+                        onClick={() => {
+                          if (course.professor) {
+                            setStartWithUserId(course.professor.id)
+                            setOpenChat(true)
+                          }
+                        }}
+                        style={{
+                          marginTop: '0.5rem',
+                          padding: '0.5rem 1rem',
+                          background: 'var(--teal-bright)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontSize: '0.875rem',
+                          fontWeight: 500
+                        }}
+                      >
+                        Message
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          )}
+
+          {activeCourseTab === 'assignments' && (
+            <div className="course-detail-content" style={{ maxWidth: '100%' }}>
+              <div className="course-info-card" style={{ flex: 1 }}>
+                <h3>All assignments</h3>
                 {courseAssignments.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                     {courseAssignments.map((assignment) => {
@@ -636,123 +841,7 @@ function CourseDetailPageContent() {
                   <p style={{ color: 'var(--text-muted)' }}>No assignments for this course</p>
                 )}
               </div>
-
-              {/* Upcoming Topics */}
-              {upcomingTopics.length > 0 && (
-                <div className="course-info-card">
-                  <h3>Upcoming Topics</h3>
-                  <div>
-                    {upcomingTopics.map((topic) => (
-                      <div key={topic.id} className="topic-item">
-                        <div className="topic-title">{topic.title}</div>
-                        {topic.description && (
-                          <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                            {topic.description}
-                          </p>
-                        )}
-                        <div className="topic-date">{formatDate(topic.scheduled_date)}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
-
-            <div className="course-detail-sidebar">
-              {/* Professor */}
-              {course.professor && (
-                <div className="course-info-card">
-                  <h3>Instructor</h3>
-                  <div className="professor-card">
-                    <div className="professor-avatar">
-                      {getInitials(course.professor.first_name, course.professor.last_name)}
-                    </div>
-                    <div className="professor-info">
-                      <h4>
-                        {course.professor.first_name} {course.professor.last_name}
-                      </h4>
-                      <p>Professor</p>
-                      {course.professor.email && (
-                        <p style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                          {course.professor.email}
-                        </p>
-                      )}
-                      <button
-                        onClick={() => {
-                          if (course.professor) {
-                            setStartWithUserId(course.professor.id)
-                            setOpenChat(true)
-                          }
-                        }}
-                        style={{
-                          marginTop: '0.5rem',
-                          padding: '0.5rem 1rem',
-                          background: 'var(--teal-bright)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          fontSize: '0.875rem',
-                          fontWeight: 500
-                        }}
-                      >
-                        Message
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Enrolled Students */}
-              <div className="course-info-card">
-                <h3>Enrolled Students ({enrolledStudents.length})</h3>
-                {enrolledStudents.length > 0 ? (
-                  <div className="student-list">
-                    {enrolledStudents.map((student) => (
-                      <div key={student.id} className="student-item">
-                        <div className="student-avatar">
-                          {getInitials(student.first_name, student.last_name)}
-                        </div>
-                        <div className="student-info" style={{ flex: 1 }}>
-                          <div className="student-name">
-                            {student.first_name} {student.last_name}
-                          </div>
-                          {student.email && (
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              {student.email}
-                            </div>
-                          )}
-                        </div>
-                        {student.id !== currentUserId && (
-                          <button
-                            onClick={() => {
-                              setStartWithUserId(student.id)
-                              setOpenChat(true)
-                            }}
-                            style={{
-                              padding: '0.375rem 0.75rem',
-                              background: 'var(--teal-bright)',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              cursor: 'pointer',
-                              fontSize: '0.75rem',
-                              fontWeight: 500,
-                              whiteSpace: 'nowrap'
-                            }}
-                          >
-                            Message
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p style={{ color: 'var(--text-muted)' }}>No students enrolled</p>
-                )}
-              </div>
-            </div>
-          </div>
           )}
 
           {activeCourseTab === 'materials' && (
@@ -839,6 +928,60 @@ function CourseDetailPageContent() {
                   </div>
                 ) : (
                   <p style={{ color: 'var(--text-muted)' }}>No announcements for this course yet.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeCourseTab === 'grades' && (
+            <div className="course-detail-content" style={{ maxWidth: '100%' }}>
+              <div className="course-info-card" style={{ flex: 1 }}>
+                <h3>My grades for this course</h3>
+                {gradesLoading ? (
+                  <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
+                ) : courseGrades.length > 0 ? (
+                  <>
+                    <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8, marginBottom: '1rem' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 320 }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--surface)' }}>
+                            <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: 600, fontSize: '0.875rem' }}>Assignment</th>
+                            <th style={{ textAlign: 'right', padding: '0.75rem', fontWeight: 600, fontSize: '0.875rem' }}>%</th>
+                            <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: 600, fontSize: '0.875rem' }}>Graded</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {courseGrades.map((row) => {
+                            const max = row.max_grade ?? 100
+                            const pct = max > 0 ? Math.round((Number(row.grade) / max) * 100) : 0
+                            return (
+                              <tr key={row.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td style={{ padding: '0.75rem', fontWeight: 500 }}>{row.assignment_name}</td>
+                                <td style={{ padding: '0.75rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: pct >= 80 ? '#10b981' : pct >= 60 ? '#f59e0b' : 'var(--text)' }}>
+                                  {pct}%
+                                </td>
+                                <td style={{ padding: '0.75rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                                  {row.graded_at ? new Date(row.graded_at).toLocaleDateString() : '—'}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {(() => {
+                      const totalEarned = courseGrades.reduce((s, g) => s + Number(g.grade), 0)
+                      const totalMax = courseGrades.reduce((s, g) => s + Number(g.max_grade ?? 100), 0)
+                      const coursePct = totalMax > 0 ? Math.round((totalEarned / totalMax) * 100) : 0
+                      return (
+                        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', margin: 0 }}>
+                          Course total: <strong style={{ color: 'var(--text)' }}>{coursePct}%</strong>
+                        </p>
+                      )
+                    })()}
+                  </>
+                ) : (
+                  <p style={{ color: 'var(--text-muted)' }}>No grades for this course yet. Grades appear here after your instructor grades your submissions.</p>
                 )}
               </div>
             </div>

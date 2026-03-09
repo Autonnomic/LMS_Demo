@@ -306,6 +306,9 @@ async function routeQuestion(question: string, client: Groq): Promise<RouteMode>
   // Strong signals: user explicitly wants answer from course materials → RAG
   if (/from\s+.+course/.test(lower) || /\b(in|from)\s+(my\s+)?(the\s+)?(.+\s+)?course\b/.test(lower)) return 'rag'
   const ragPhrases = [
+    'summary of course',
+    'summary of course material',
+    'summary of course materials',
     'course material',
     'course materials',
     'find it on the course',
@@ -507,19 +510,34 @@ async function answerWithRag(
     }
   }
 
+  function matchCourseToText(c: { id: string; name: string; code: string }, text: string): boolean {
+    const lower = text.toLowerCase()
+    const nameLower = c.name.toLowerCase()
+    const codeLower = (c.code ?? '').toLowerCase()
+    if (lower.includes(nameLower) || (codeLower && lower.includes(codeLower))) return true
+    const words = nameLower.split(/\s+/).filter((w) => w.length > 2)
+    const matchCount = words.filter((w) => lower.includes(w)).length
+    return matchCount >= Math.min(2, words.length)
+  }
+
   let courseId = preferredCourseId && courses.some((c) => c.id === preferredCourseId) ? preferredCourseId : undefined
   if (!courseId) {
     const lower = question.toLowerCase()
-    const match = courses.find(
-      (c) =>
-        lower.includes(c.name.toLowerCase()) ||
-        lower.includes(c.code.toLowerCase()) ||
-        c.name.toLowerCase().split(/\s+/).some((w) => w.length > 2 && lower.includes(w))
-    )
+    let match = courses.find((c) => matchCourseToText(c, lower))
+    if (!match && history.length > 0) {
+      const recentText = history
+        .slice(-6)
+        .map((m) => m.content)
+        .join(' ')
+      if (recentText.trim()) {
+        match = courses.find((c) => matchCourseToText(c, recentText))
+      }
+    }
     courseId = match?.id ?? courses[0].id
   }
 
-  let chunks: { content: string; main_keyword?: string }[]
+  type ChunkRow = { content: string; main_keyword?: string; material_id?: string; file_name?: string }
+  let chunks: ChunkRow[]
   try {
     const queryEmbedding = await getOllamaEmbedding(question)
     const { data, error } = await admin.rpc('match_document_chunks', {
@@ -528,7 +546,7 @@ async function answerWithRag(
       match_limit: 12,
     } as never)
     if (error) throw new Error(error.message)
-    chunks = Array.isArray(data) ? data : []
+    chunks = Array.isArray(data) ? (data as ChunkRow[]) : []
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Search failed'
     return {
@@ -548,18 +566,58 @@ async function answerWithRag(
     }
   }
 
-  const context = chunks.map((c, i) => `[${i + 1}] ${(c.content ?? '').trim()}`).join('\n\n')
+  const materialIds: string[] = []
+  const seenIds = new Set<string>()
+  for (const c of chunks) {
+    const id = c.material_id
+    if (id && !seenIds.has(id)) {
+      seenIds.add(id)
+      materialIds.push(id)
+    }
+  }
+  let fileNamesByMaterialId: Record<string, string> = {}
+  if (materialIds.length > 0) {
+    const { data: materials } = await admin
+      .from('course_materials')
+      .select('id, file_name')
+      .in('id', materialIds)
+    if (materials) {
+      materials.forEach((m: { id: string; file_name: string | null }) => {
+        fileNamesByMaterialId[m.id] = m.file_name ?? 'unknown'
+      })
+    }
+  }
+
+  const context = chunks
+    .map((c, i) => {
+      const fileName = c.file_name ?? (c.material_id ? fileNamesByMaterialId[c.material_id] : null) ?? null
+      const sourceLabel = fileName ? ` (Source: ${fileName})` : ''
+      return `[${i + 1}]${sourceLabel} ${(c.content ?? '').trim()}`
+    })
+    .join('\n\n')
+  const contextLength = context.length
+
+  if (contextLength < 150) {
+    return {
+      answer: "There isn't enough indexed content for this course to answer from. Upload and index more course materials (e.g. PDFs), then try again.",
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+    }
+  }
+
   const systemContent = [
-    'You are a university AI helper. Your answer MUST be grounded in the following excerpts from the course materials.',
+    'You are a university AI helper. Your answer MUST be based ONLY on the following excerpts from the course materials. Do not use your general knowledge to add facts, curriculum, textbooks, modules, or topics that are not written in the excerpts.',
     'Rules:',
-    '- Use the exact terminology, examples, and code from the excerpts. Do not replace them with generic explanations.',
-    '- Preserve precise meaning: do not mix distinct concepts (e.g. reading from a file vs writing/saving to a file; serializing vs deserializing). If the excerpt says read() returns strings when you read from a file, say that—do not say "when you want to save" for something that refers to reading.',
-    '- If the excerpts show code (e.g. json.dumps, json.load), function names, or definitions, include or paraphrase those in your answer.',
-    '- Prefer quoting or closely paraphrasing the material. Only add brief clarification if needed.',
-    '- If the excerpts do not contain enough information, say so first, then add a short general note.',
-    '- Do not invent content that is not in the excerpts. Keep the answer to 3–4 short paragraphs.',
+    '- Use only the exact terminology, examples, and code from the excerpts. Do not replace them with generic explanations or add standard curriculum (e.g. do not invent "Arrays and Stacks", "Linked Lists", "Textbooks" unless they appear in the excerpts).',
+    '- If the user asks for a summary or overview of course materials: only list or describe what is explicitly present in the excerpts (e.g. section titles, topics actually mentioned). If the excerpts do not contain a course overview, syllabus, or list of modules, say exactly: "The indexed course materials do not contain a summary or syllabus. The excerpts only cover: [brief list of what is actually in the excerpts]." Do not invent a curriculum or textbook list.',
+    '- Preserve precise meaning: do not mix distinct concepts. If the excerpt says X, say X—do not substitute unrelated content.',
+    '- If the excerpts show code, function names, or definitions, include or paraphrase those. Prefer quoting or closely paraphrasing.',
+    '- If the excerpts do not contain enough information to answer the question, say so first (e.g. "The provided excerpts do not contain this information"), then you may add one short general note only if needed.',
+    '- Do not invent content. Do not add modules, chapters, textbooks, or references that are not in the excerpts. Keep the answer to 3–4 short paragraphs.',
+    '- When the user asks which PDFs or files the excerpts are from, or what the source documents are: use the "Source: ..." label shown for each excerpt and list the actual file names from those labels. Do not guess or suggest generic names.',
     '',
-    'Excerpts from course materials:',
+    'Excerpts from course materials (each may include a Source: filename):',
     context,
   ].join('\n')
 
