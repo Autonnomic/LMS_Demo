@@ -29,13 +29,30 @@ export default function ProfessorProfilePage() {
         return
       }
       setProfile(profileData as ProfileData)
-      const { data: coursesData } = await supabase
-        .from('courses')
-        .select('id')
-        .eq('professor_id', user.id)
-      const count = coursesData?.length ?? 0
+
+      // Count all courses where this professor teaches (primary or mapped)
+      const [{ data: primaryCourses }, { data: secondaryRows }] = await Promise.all([
+        supabase
+          .from('courses')
+          .select('id')
+          .eq('professor_id', user.id),
+        supabase
+          .from('course_professors')
+          .select('course_id')
+          .eq('professor_id', user.id),
+      ])
+
+      const idSet = new Set<string>()
+      ;(primaryCourses || []).forEach((c: { id: string }) => {
+        if (c.id) idSet.add(c.id)
+      })
+      ;(secondaryRows || []).forEach((row: { course_id: string }) => {
+        if (row.course_id) idSet.add(row.course_id)
+      })
+
+      const courseIds = Array.from(idSet)
+      const count = courseIds.length
       if (count > 0) {
-        const courseIds = (coursesData || []).map((c: { id: string }) => c.id)
         const { count: studentsCount } = await supabase
           .from('course_registrations')
           .select('*', { count: 'exact', head: true })

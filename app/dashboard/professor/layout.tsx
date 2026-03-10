@@ -52,14 +52,25 @@ export default function ProfessorLayout({
           return
         }
 
-        const { data: coursesData } = await supabase
-          .from('courses')
-          .select('id, code, name')
-          .eq('professor_id', user.id)
-          .order('code', { ascending: true })
+        // Load all courses this professor teaches via the same API the dashboard uses
+        const { data: { session } } = await supabase.auth.getSession()
+        const headers: Record<string, string> = {}
+        if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
 
-        if (!cancelled && coursesData) {
-          setCourses(coursesData)
+        const res = await fetch('/api/professor/my-courses', {
+          method: 'GET',
+          credentials: 'include',
+          headers,
+        })
+
+        if (!cancelled) {
+          if (res.ok) {
+            const json = await res.json().catch(() => ({}))
+            const list = Array.isArray(json.courses) ? json.courses as SidebarCourse[] : []
+            setCourses(list)
+          } else {
+            setCourses([])
+          }
         }
 
         // Load unread inbox message count for this professor
@@ -131,7 +142,14 @@ export default function ProfessorLayout({
             </div>
           </nav>
         </aside>
-        {children}
+        <main className="canvas-main-content">
+          <div className="canvas-topbar">
+            <span className="canvas-topbar-title">Dashboard</span>
+          </div>
+          <div className="canvas-content-area">
+            <div className="skeleton-card skeleton" style={{ height: '200px', borderRadius: '16px' }} />
+          </div>
+        </main>
       </div>
     )
   }

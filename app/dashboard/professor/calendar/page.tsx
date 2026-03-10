@@ -264,20 +264,41 @@ export default function ProfessorCalendarPage() {
       setUserId(user.id)
       setUserRole(profile.role as 'student' | 'professor')
 
-      const { data: coursesData } = await supabase
-        .from('courses')
-        .select('id, code, name')
-        .eq('professor_id', user.id)
-        .order('code', { ascending: true })
+      // Gather all course IDs where this professor teaches (primary or mapped)
+      const [{ data: primaryCourses }, { data: secondaryRows }] = await Promise.all([
+        supabase
+          .from('courses')
+          .select('id')
+          .eq('professor_id', user.id),
+        supabase
+          .from('course_professors')
+          .select('course_id')
+          .eq('professor_id', user.id),
+      ])
 
-      if (!coursesData || coursesData.length === 0) {
+      const idSet = new Set<string>()
+      ;(primaryCourses || []).forEach((c: { id: string }) => {
+        if (c.id) idSet.add(c.id)
+      })
+      ;(secondaryRows || []).forEach((row: { course_id: string }) => {
+        if (row.course_id) idSet.add(row.course_id)
+      })
+
+      const courseIds = Array.from(idSet)
+
+      if (!courseIds.length) {
         setCourses([])
         setLoading(false)
         return
       }
 
-      setCourses(coursesData)
-      const courseIds = coursesData.map((c) => c.id)
+      const { data: coursesData } = await supabase
+        .from('courses')
+        .select('id, code, name')
+        .in('id', courseIds)
+        .order('code', { ascending: true })
+
+      setCourses(coursesData || [])
 
       const [schedRes, assignRes, topicsRes] = await Promise.all([
         supabase

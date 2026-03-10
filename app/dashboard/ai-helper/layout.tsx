@@ -96,12 +96,37 @@ export default function AiHelperLayout({ children }: { children: ReactNode }) {
             setStudentCourses(list)
           }
         } else {
-          const { data: coursesData } = await supabase
-            .from('courses')
-            .select('id, code, name')
-            .eq('professor_id', user.id)
-            .order('code', { ascending: true })
-          if (!cancelled && coursesData) setProfessorCourses(coursesData)
+          // Professor: include courses where they are primary or mapped in course_professors
+          const [{ data: primaryCourses }, { data: secondaryRows }] = await Promise.all([
+            supabase
+              .from('courses')
+              .select('id')
+              .eq('professor_id', user.id),
+            supabase
+              .from('course_professors')
+              .select('course_id')
+              .eq('professor_id', user.id),
+          ])
+
+          const idSet = new Set<string>()
+          ;(primaryCourses || []).forEach((c: { id: string }) => {
+            if (c.id) idSet.add(c.id)
+          })
+          ;(secondaryRows || []).forEach((row: { course_id: string }) => {
+            if (row.course_id) idSet.add(row.course_id)
+          })
+
+          const courseIds = Array.from(idSet)
+          if (courseIds.length) {
+            const { data: coursesData } = await supabase
+              .from('courses')
+              .select('id, code, name')
+              .in('id', courseIds)
+              .order('code', { ascending: true })
+            if (!cancelled && coursesData) setProfessorCourses(coursesData)
+          } else if (!cancelled) {
+            setProfessorCourses([])
+          }
 
           try {
             const { data: convs } = await supabase

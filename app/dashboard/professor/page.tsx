@@ -66,44 +66,49 @@ export default function ProfessorDashboard() {
       setUserId(user.id)
       setUserRole(profile.role as 'student' | 'professor')
 
-      const { data: coursesData } = await supabase
-        .from('courses')
-        .select(`
-          id,
-          code,
-          name,
-          description,
-          credits,
-          semester,
-          academic_year
-        `)
-        .eq('professor_id', user.id)
-        .order('code', { ascending: true })
+      // Fetch all courses this professor teaches (primary or mapped) via server-side API
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
 
-      if (coursesData?.length) {
-        const courseIds = coursesData.map((c) => c.id)
-        const { data: regs } = await supabase
-          .from('course_registrations')
-          .select('course_id')
-          .in('course_id', courseIds)
-          .eq('status', 'enrolled')
-        const countByCourse: Record<string, number> = {}
-        courseIds.forEach((id) => (countByCourse[id] = 0))
-        regs?.forEach((r) => { countByCourse[r.course_id] = (countByCourse[r.course_id] || 0) + 1 })
-        setCourses(
-          coursesData.map((course) => ({
-            ...course,
-            enrolled_students: countByCourse[course.id] ?? 0
-          }))
-        )
-      } else if (coursesData) {
-        setCourses(
-          coursesData.map((course) => ({
-            ...course,
-            enrolled_students: 0
-          }))
-        )
+      const res = await fetch('/api/professor/my-courses', {
+        method: 'GET',
+        credentials: 'include',
+        headers,
+      })
+
+      if (!res.ok) {
+        console.error('Failed to load professor courses')
+        setCourses([])
+        return
       }
+
+      const json = await res.json().catch(() => ({}))
+      const coursesData = Array.isArray(json.courses) ? (json.courses as Omit<Course, 'enrolled_students'>[]) : []
+
+      if (!coursesData.length) {
+        setCourses([])
+        return
+      }
+
+      const courseIds = coursesData.map((c) => c.id)
+
+      const { data: regs } = await supabase
+        .from('course_registrations')
+        .select('course_id')
+        .in('course_id', courseIds)
+        .eq('status', 'enrolled')
+      const countByCourse: Record<string, number> = {}
+      courseIds.forEach((id) => (countByCourse[id] = 0))
+      regs?.forEach((r) => {
+        countByCourse[r.course_id] = (countByCourse[r.course_id] || 0) + 1
+      })
+      setCourses(
+        coursesData.map((course) => ({
+          ...course,
+          enrolled_students: countByCourse[course.id] ?? 0,
+        }))
+      )
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
     } finally {
