@@ -55,6 +55,10 @@ export default function Sidebar({ courses }: SidebarProps) {
     return pathname.startsWith('/dashboard/student/study-plans')
   }
 
+  const isDiscussionsActive = () => {
+    return pathname.startsWith('/dashboard/student/discussions')
+  }
+
   const isCalendarActive = () => {
     return pathname === '/dashboard/student/calendar'
   }
@@ -121,6 +125,21 @@ export default function Sidebar({ courses }: SidebarProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <span className="nav-text">Assignments</span>
+        </Link>
+
+        <Link
+          href="/dashboard/student/discussions"
+          className={`canvas-nav-item ${isDiscussionsActive() ? 'active' : ''}`}
+        >
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M8 10h8M8 14h5M7 6h10a2 2 0 012 2v8.5a1.5 1.5 0 01-1.5 1.5H9l-4 3v-3H5a2 2 0 01-2-2V8a2 2 0 012-2z"
+            />
+          </svg>
+          <span className="nav-text">Discussions</span>
         </Link>
         
         <Link 
