@@ -253,14 +253,33 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
       return
     }
     setSearching(true)
-    const q = `%${searchQuery.trim()}%`
-    const { data, error } = await supabase.from('user_profiles').select('id, first_name, last_name, email, role').neq('id', userId).in('role', ['student', 'professor']).or(`first_name.ilike.${q},last_name.ilike.${q},email.ilike.${q}`).limit(20)
-    setSearching(false)
-    if (error) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+
+      const res = await fetch('/api/chat/search-users', {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({ query: searchQuery.trim() }),
+      })
+
+      setSearching(false)
+
+      if (!res.ok) {
+        setSearchResults([])
+        return
+      }
+
+      const json = await res.json().catch(() => ({}))
+      const list = Array.isArray(json.users) ? (json.users as SearchUser[]) : []
+      setSearchResults(list)
+    } catch (e) {
+      console.error('Error searching users:', e)
+      setSearching(false)
       setSearchResults([])
-      return
     }
-    setSearchResults(data || [])
   }
 
   useEffect(() => {
