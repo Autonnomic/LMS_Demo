@@ -4,30 +4,47 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Profile } from '../types'
 
+type AllowedEmail = { id: string; email: string; created_at: string }
+
 export default function AdminStudentsPage() {
   const [profiles, setProfiles] = useState<Profile[]>([])
+  const [allowedEmails, setAllowedEmails] = useState<AllowedEmail[]>([])
   const [loading, setLoading] = useState(true)
   const [assigning, setAssigning] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [newSignupEmails, setNewSignupEmails] = useState('')
+  const [addingEmails, setAddingEmails] = useState(false)
+  const [signupEmailsError, setSignupEmailsError] = useState<string | null>(null)
+  const [removingEmailId, setRemovingEmailId] = useState<string | null>(null)
+  const [adminCollegeId, setAdminCollegeId] = useState<number | null>(null)
 
   async function fetchData() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('role')
+      .select('role, college_id')
       .eq('id', user.id)
       .single()
-    if (!profile || profile.role !== 'admin') return
+    if (!profile || profile.role !== 'admin' || profile.college_id == null) return
 
-    const { data: profilesData } = await supabase
-      .from('user_profiles')
-      .select('id, email, first_name, last_name, role, roll_number, created_at')
-      .order('created_at', { ascending: false })
-    if (profilesData) {
-      setProfiles(profilesData as Profile[])
-    }
+    setAdminCollegeId(Number(profile.college_id))
+
+    const [profilesRes, emailsRes] = await Promise.all([
+      supabase
+        .from('user_profiles')
+        .select('id, email, first_name, last_name, role, roll_number, created_at')
+        .eq('college_id', profile.college_id)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('allowed_signup_emails')
+        .select('id, email, created_at')
+        .eq('college_id', profile.college_id)
+        .order('created_at', { ascending: false }),
+    ])
+    if (profilesRes.data) setProfiles(profilesRes.data as Profile[])
+    if (emailsRes.data) setAllowedEmails(emailsRes.data as AllowedEmail[])
   }
 
   useEffect(() => {
@@ -61,6 +78,45 @@ export default function AdminStudentsPage() {
     setAssigning(null)
   }
 
+  async function handleAddSignupEmails() {
+    if (!adminCollegeId || addingEmails || !newSignupEmails.trim()) return
+    setSignupEmailsError(null)
+    setAddingEmails(true)
+    const raw = newSignupEmails
+      .split(/[\n,;]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length > 0 && s.includes('@'))
+    const emails = Array.from(new Set(raw))
+    const existingSet = new Set(allowedEmails.map((e) => e.email.toLowerCase()))
+    let added = 0
+    for (const email of emails) {
+      if (existingSet.has(email)) continue
+      const { error: insertError } = await supabase
+        .from('allowed_signup_emails')
+        .insert({ email, college_id: adminCollegeId })
+      if (insertError) {
+        if (insertError.code === '23505') existingSet.add(email)
+        else {
+          setSignupEmailsError(insertError.message)
+          break
+        }
+      } else {
+        added++
+        existingSet.add(email)
+      }
+    }
+    setAddingEmails(false)
+    setNewSignupEmails('')
+    await fetchData()
+  }
+
+  async function handleRemoveSignupEmail(id: string) {
+    setRemovingEmailId(id)
+    await supabase.from('allowed_signup_emails').delete().eq('id', id)
+    setAllowedEmails((prev) => prev.filter((e) => e.id !== id))
+    setRemovingEmailId(null)
+  }
+
   const students = profiles.filter((p) => p.role === 'student')
   const searchLower = searchQuery.trim().toLowerCase()
   const filteredStudents =
@@ -87,13 +143,82 @@ export default function AdminStudentsPage() {
         Students
       </h2>
       <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.875rem' }}>
-        Only emails in the &quot;Signup emails&quot; list can create an account. Students sign up on their own with an allowed email.
+        Only emails in the allowed list below can create an account for your college. Add emails so students can sign up.
       </p>
       {error && (
         <div className="auth-error" style={{ marginBottom: '1rem' }}>
           {error}
         </div>
       )}
+
+      <section style={{ marginBottom: '2rem', padding: '1.25rem', background: 'var(--surface-hover)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+        <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>
+          Allow signup emails
+        </h3>
+        <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+          Add one or more emails (one per line or comma-separated). Only these emails can create an account and will join your college as students.
+        </p>
+        {signupEmailsError && (
+          <div className="auth-error" style={{ marginBottom: '0.75rem' }}>{signupEmailsError}</div>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <textarea
+            className="form-control"
+            placeholder="student1@example.com&#10;student2@example.com"
+            value={newSignupEmails}
+            onChange={(e) => setNewSignupEmails(e.target.value)}
+            disabled={addingEmails}
+            rows={3}
+            style={{ minWidth: '100%', resize: 'vertical' }}
+            aria-label="Emails to allow for signup"
+          />
+          <button
+            type="button"
+            className="btn-primary"
+            style={{ padding: '0.5rem 1.25rem', alignSelf: 'flex-start' }}
+            disabled={addingEmails || !newSignupEmails.trim()}
+            onClick={handleAddSignupEmails}
+          >
+            {addingEmails ? 'Adding…' : 'Add allowed emails'}
+          </button>
+        </div>
+        {allowedEmails.length > 0 && (
+          <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+              Allowed for signup ({allowedEmails.length})
+            </div>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+              {allowedEmails.map((e) => (
+                <li
+                  key={e.id}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    padding: '0.25rem 0.5rem',
+                    background: 'var(--surface)',
+                    borderRadius: '6px',
+                    fontSize: '0.875rem',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <span>{e.email}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${e.email}`}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text-muted)', fontSize: '1rem' }}
+                    disabled={removingEmailId === e.id}
+                    onClick={() => handleRemoveSignupEmail(e.id)}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
+
       {students.length > 0 ? (
         <section>
           <h3 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>

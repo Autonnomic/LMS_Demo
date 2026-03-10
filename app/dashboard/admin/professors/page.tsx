@@ -27,14 +27,15 @@ export default function AdminProfessorsPage() {
     if (!user) return
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('role')
+      .select('role, college_id')
       .eq('id', user.id)
       .single()
-    if (!profile || profile.role !== 'admin') return
+    if (!profile || profile.role !== 'admin' || profile.college_id == null) return
 
     const { data: profilesData } = await supabase
       .from('user_profiles')
       .select('id, email, first_name, last_name, role, roll_number, created_at')
+      .eq('college_id', profile.college_id)
       .order('created_at', { ascending: false })
     if (profilesData) {
       setProfiles(profilesData as Profile[])

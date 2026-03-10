@@ -20,19 +20,22 @@ async function getAdminClient(request: Request) {
 
   const { data: myProfile } = await adminClient
     .from('user_profiles')
-    .select('role')
+    .select('role, college_id')
     .eq('id', user.id)
     .single()
 
   if (myProfile?.role !== 'admin') {
     return { errorResponse: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   }
+  if (myProfile?.college_id == null) {
+    return { errorResponse: NextResponse.json({ error: 'Admin must be assigned to a college' }, { status: 403 }) }
+  }
 
-  return { adminClient }
+  return { adminClient, collegeId: Number(myProfile.college_id) }
 }
 
 export async function GET(request: Request) {
-  const { adminClient, errorResponse } = await getAdminClient(request)
+  const { adminClient, errorResponse, collegeId } = await getAdminClient(request)
   if (!adminClient) return errorResponse!
 
   const { data, error } = await adminClient
@@ -52,25 +55,31 @@ export async function GET(request: Request) {
         email
       )
     `)
+    .eq('college_id', collegeId)
     .order('code', { ascending: true })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
-  const { data: courseProfessors, error: cpError } = await adminClient
-    .from('course_professors')
-    .select(`
-      id,
-      course_id,
-      professor_id,
-      professor:user_profiles (
-        id,
-        first_name,
-        last_name,
-        email
-      )
-    `)
+  const courseIds = (data ?? []).map((c: { id: string }) => c.id)
+  const cpResult = courseIds.length > 0
+    ? await adminClient
+        .from('course_professors')
+        .select(`
+          id,
+          course_id,
+          professor_id,
+          professor:user_profiles (
+            id,
+            first_name,
+            last_name,
+            email
+          )
+        `)
+        .in('course_id', courseIds)
+    : { data: [], error: null }
+  const { data: courseProfessors, error: cpError } = cpResult
 
   if (cpError) {
     return NextResponse.json({ error: cpError.message }, { status: 400 })
@@ -80,7 +89,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { adminClient, errorResponse } = await getAdminClient(request)
+  const { adminClient, errorResponse, collegeId } = await getAdminClient(request)
   if (!adminClient) return errorResponse!
 
   const body = await request.json().catch(() => ({}))
@@ -127,6 +136,7 @@ export async function POST(request: Request) {
     credits: parsedCredits,
     semester: semester?.trim() || null,
     academic_year: academicYear?.trim() || null,
+    college_id: collegeId,
   }
 
   const { data, error } = await adminClient

@@ -13,6 +13,7 @@ export async function POST(request: Request) {
     if (!serviceRoleKey) {
       return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
     }
+
     const adminClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       serviceRoleKey,
@@ -21,29 +22,35 @@ export async function POST(request: Request) {
 
     const { data: myProfile } = await adminClient
       .from('user_profiles')
-      .select('role, college_id')
+      .select('role')
       .eq('id', user.id)
       .single()
 
-    if (myProfile?.role !== 'admin' || myProfile?.college_id == null) {
+    if (myProfile?.role !== 'super_admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const body = await request.json()
+    const body = await request.json().catch(() => ({}))
     const {
+      collegeId,
       email,
       tempPassword,
       firstName,
       lastName,
-      eligibleCourseIds,
     } = body as {
+      collegeId?: number
       email?: string
       tempPassword?: string
       firstName?: string
       lastName?: string
-      eligibleCourseIds?: string[]
     }
 
+    if (collegeId == null || typeof collegeId !== 'number') {
+      return NextResponse.json(
+        { error: 'collegeId is required' },
+        { status: 400 }
+      )
+    }
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return NextResponse.json(
         { error: 'Valid email is required' },
@@ -54,6 +61,19 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Temporary password must be at least 8 characters' },
         { status: 400 }
+      )
+    }
+
+    const { data: college } = await adminClient
+      .from('college')
+      .select('id')
+      .eq('id', collegeId)
+      .single()
+
+    if (!college) {
+      return NextResponse.json(
+        { error: 'College not found' },
+        { status: 404 }
       )
     }
 
@@ -88,9 +108,9 @@ export async function POST(request: Request) {
           email: newUser.user.email ?? email,
           first_name: firstName?.trim() || null,
           last_name: lastName?.trim() || null,
-          role: 'professor',
+          role: 'admin',
+          college_id: collegeId,
           must_reset_password: true,
-          college_id: myProfile.college_id,
         },
         { onConflict: 'id' }
       )
@@ -100,26 +120,6 @@ export async function POST(request: Request) {
         { error: profileError.message },
         { status: 400 }
       )
-    }
-
-    if (Array.isArray(eligibleCourseIds) && eligibleCourseIds.length > 0) {
-      const rows = eligibleCourseIds
-        .filter((id) => typeof id === 'string' && id.trim().length > 0)
-        .map((courseId) => ({
-          professor_id: newUser.user.id,
-          course_id: courseId,
-        }))
-      if (rows.length > 0) {
-        const { error: eligError } = await adminClient
-          .from('professor_course_eligibility')
-          .upsert(rows, { onConflict: 'professor_id,course_id' })
-        if (eligError) {
-          return NextResponse.json(
-            { error: `Professor created but eligibility failed: ${eligError.message}` },
-            { status: 400 }
-          )
-        }
-      }
     }
 
     return NextResponse.json({

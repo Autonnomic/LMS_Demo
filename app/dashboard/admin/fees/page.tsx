@@ -43,10 +43,19 @@ export default function AdminFeesPage() {
   async function load() {
     setError(null)
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: adminProfile } = await supabase
+        .from('user_profiles')
+        .select('college_id')
+        .eq('id', user.id)
+        .single()
+      if (!adminProfile?.college_id) return
       const { data: students, error: studentsErr } = await supabase
         .from('user_profiles')
         .select('id, first_name, last_name, email, roll_number')
         .eq('role', 'student')
+        .eq('college_id', adminProfile.college_id)
         .order('first_name')
 
       if (studentsErr) throw studentsErr

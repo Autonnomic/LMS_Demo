@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
@@ -12,6 +12,53 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [checkingSession, setCheckingSession] = useState(true)
+
+  // If user lands here with an existing session (e.g. after email confirmation), redirect to dashboard
+  useEffect(() => {
+    let cancelled = false
+    let authUnsubscribe: (() => void) | null = null
+    async function redirectIfSession(session: { access_token: string; refresh_token?: string } | null) {
+      if (!session?.access_token) return
+      const registerRes = await fetch('/api/auth/register-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify({ refresh_token: session.refresh_token }),
+      })
+      if (cancelled) return
+      if (registerRes.status === 409) {
+        setError('This account is already logged in on another device. Please log out there first.')
+        setCheckingSession(false)
+        return
+      }
+      setCheckingSession(false)
+      router.replace('/dashboard')
+    }
+    async function checkExistingSession() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (cancelled) return
+      if (session?.user) {
+        await redirectIfSession(session)
+        return
+      }
+      setCheckingSession(false)
+      // Session may appear after Supabase processes hash (e.g. email confirm link)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (cancelled || event !== 'SIGNED_IN' || !session) return
+        redirectIfSession(session)
+      })
+      authUnsubscribe = () => subscription.unsubscribe()
+    }
+    checkExistingSession()
+    return () => {
+      cancelled = true
+      authUnsubscribe?.()
+    }
+  }, [router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -116,6 +163,16 @@ export default function LoginPage() {
       return
     }
     router.replace(`/dashboard/${role}`)
+  }
+
+  if (checkingSession) {
+    return (
+      <main className="auth-page">
+        <div className="auth-card">
+          <p className="subtitle">Loading…</p>
+        </div>
+      </main>
+    )
   }
 
   return (

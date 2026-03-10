@@ -14,13 +14,14 @@ export async function POST(request: Request) {
 
     const { data: myProfile } = await supabase
       .from('user_profiles')
-      .select('role')
+      .select('role, college_id')
       .eq('id', user.id)
       .single()
 
-    if (myProfile?.role !== 'admin') {
+    if (myProfile?.role !== 'admin' || myProfile?.college_id == null) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    const adminCollegeId = Number(myProfile.college_id)
 
     const body = await request.json()
     const { registrationId, action } = body as { registrationId?: string; action?: 'accept' | 'reject' }
@@ -52,6 +53,14 @@ export async function POST(request: Request) {
       if (!registration) {
         return NextResponse.json({ error: 'Registration not found' }, { status: 404 })
       }
+      const { data: course } = await adminClient
+        .from('courses')
+        .select('college_id')
+        .eq('id', registration.course_id)
+        .single()
+      if (!course || Number(course.college_id) !== adminCollegeId) {
+        return NextResponse.json({ error: 'Forbidden: course not in your college' }, { status: 403 })
+      }
 
       let professorId = registration.professor_id as string | null
       if (!professorId) {
@@ -75,7 +84,22 @@ export async function POST(request: Request) {
         )
       }
     } else {
-      // Reject: delete the registration
+      // Reject: verify course belongs to admin's college, then delete the registration
+      const { data: reg } = await adminClient
+        .from('course_registrations')
+        .select('course_id')
+        .eq('id', registrationId)
+        .single()
+      if (reg) {
+        const { data: course } = await adminClient
+          .from('courses')
+          .select('college_id')
+          .eq('id', reg.course_id)
+          .single()
+        if (!course || Number(course.college_id) !== adminCollegeId) {
+          return NextResponse.json({ error: 'Forbidden: course not in your college' }, { status: 403 })
+        }
+      }
       const { error: deleteError } = await adminClient
         .from('course_registrations')
         .delete()

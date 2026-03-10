@@ -286,7 +286,7 @@ export default function ProfessorCourseDetail() {
       if (uploadError) throw uploadError
       const { data: insertedMaterial, error: insertError } = await supabase
         .from('course_materials')
-        .insert({ course_id: courseId, file_name: file.name, file_path: filePath })
+        .insert({ course_id: courseId, file_name: file.name, file_path: filePath, college_id: 1 })
         .select('id')
         .single()
       if (insertError) throw insertError

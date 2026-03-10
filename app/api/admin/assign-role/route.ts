@@ -27,12 +27,14 @@ export async function POST(request: Request) {
       .eq('id', user.id)
       .single()
 
-    if (myProfile?.role !== 'admin') {
+    const isSuperAdmin = myProfile?.role === 'super_admin'
+    const isAdmin = myProfile?.role === 'admin'
+    if (!isSuperAdmin && !isAdmin) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const body = await request.json()
-    const { userId, role } = body as { userId?: string; role?: string }
+    const { userId, role, collegeId } = body as { userId?: string; role?: string; collegeId?: number }
     if (!userId || !role || !VALID_ROLES.includes(role as (typeof VALID_ROLES)[number])) {
       return NextResponse.json(
         { error: 'Invalid body: userId and role (student|professor|admin) required' },
@@ -40,9 +42,36 @@ export async function POST(request: Request) {
       )
     }
 
+    if (role === 'admin') {
+      if (!isSuperAdmin) {
+        return NextResponse.json(
+          { error: 'Only super admin can assign admin role' },
+          { status: 403 }
+        )
+      }
+      if (collegeId == null || typeof collegeId !== 'number') {
+        return NextResponse.json(
+          { error: 'collegeId is required when assigning admin role' },
+          { status: 400 }
+        )
+      }
+      const { data: college } = await adminClient
+        .from('college')
+        .select('id')
+        .eq('id', collegeId)
+        .single()
+      if (!college) {
+        return NextResponse.json({ error: 'College not found' }, { status: 404 })
+      }
+    }
+
+    const updatePayload = role === 'admin' && isSuperAdmin && collegeId != null
+      ? { role, college_id: collegeId }
+      : { role }
+
     const { error: updateError } = await adminClient
       .from('user_profiles')
-      .update({ role })
+      .update(updatePayload)
       .eq('id', userId)
 
     if (updateError) {

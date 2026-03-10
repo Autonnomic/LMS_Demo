@@ -41,6 +41,21 @@ export async function POST(request: Request) {
     }
 
     if (!existing) {
+      // Allocate student to the same college as the admin who allowed this email (allowed_signup_emails.college_id)
+      const emailLower = (user.email ?? '').trim().toLowerCase()
+      let collegeId: number = 1
+      if (emailLower) {
+        const { data: allowedRow } = await adminClient
+          .from('allowed_signup_emails')
+          .select('college_id')
+          .ilike('email', emailLower)
+          .not('college_id', 'is', null)
+          .limit(1)
+          .maybeSingle()
+        if (allowedRow?.college_id != null) {
+          collegeId = Number(allowedRow.college_id)
+        }
+      }
       const { error: insertError } = await adminClient
         .from('user_profiles')
         .insert({
@@ -50,6 +65,7 @@ export async function POST(request: Request) {
           last_name: lastName,
           roll_number: rollNumber,
           role: 'student',
+          college_id: collegeId,
         })
       if (insertError) {
         return NextResponse.json(

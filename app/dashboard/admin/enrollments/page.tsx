@@ -16,10 +16,19 @@ export default function AdminEnrollmentsPage() {
     if (!user) return
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('role')
+      .select('role, college_id')
       .eq('id', user.id)
       .single()
-    if (!profile || profile.role !== 'admin') return
+    if (!profile || profile.role !== 'admin' || profile.college_id == null) return
+    const { data: collegeCourses } = await supabase
+      .from('courses')
+      .select('id')
+      .eq('college_id', profile.college_id)
+    const courseIds = (collegeCourses ?? []).map((c: { id: string }) => c.id)
+    if (courseIds.length === 0) {
+      setEnrollmentRequests([])
+      return
+    }
     const { data } = await supabase
       .from('course_registrations')
       .select(`
@@ -38,6 +47,7 @@ export default function AdminEnrollmentsPage() {
           name
         )
       `)
+      .in('course_id', courseIds)
       .eq('status', 'pending')
       .order('registered_at', { ascending: false })
     if (data) setEnrollmentRequests(data as unknown as EnrollmentRequest[])

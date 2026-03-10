@@ -32,10 +32,13 @@ export default function SignupPage() {
       setError('This email is not authorized to sign up. Contact your administrator to get access.')
       return
     }
+    const redirectTo =
+      typeof window !== 'undefined' ? `${window.location.origin}/` : undefined
     const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
+      email: email.trim().toLowerCase(),
       password,
       options: {
+        emailRedirectTo: redirectTo,
         data: {
           first_name: firstName.trim(),
           last_name: lastName.trim(),

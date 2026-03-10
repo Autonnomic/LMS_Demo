@@ -20,11 +20,11 @@ export async function POST(request: Request) {
 
     const { data: myProfile } = await adminClient
       .from('user_profiles')
-      .select('role')
+      .select('role, college_id')
       .eq('id', user.id)
       .single()
 
-    if (myProfile?.role !== 'admin') {
+    if (myProfile?.role !== 'admin' || myProfile?.college_id == null) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -34,6 +34,18 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'Invalid body: courseId and professorId required' },
         { status: 400 }
+      )
+    }
+
+    const { data: course } = await adminClient
+      .from('courses')
+      .select('college_id')
+      .eq('id', courseId)
+      .single()
+    if (!course || Number(course.college_id) !== Number(myProfile.college_id)) {
+      return NextResponse.json(
+        { error: 'Forbidden: course not in your college' },
+        { status: 403 }
       )
     }
 

@@ -27,7 +27,7 @@ export default function AdminProfilePage() {
       }
       const { data: profileData, error } = await supabase
         .from('user_profiles')
-        .select('id, first_name, last_name, email, role, created_at')
+        .select('id, first_name, last_name, email, role, created_at, college_id')
         .eq('id', user.id)
         .single()
       if (error || !profileData || profileData.role !== 'admin') {
@@ -42,9 +42,16 @@ export default function AdminProfilePage() {
 
   useEffect(() => {
     if (!profile || profile.role !== 'admin') return
+    const collegeId = (profile as { college_id?: number | null }).college_id
+    if (collegeId == null) return
     let cancelled = false
     async function fetchMetrics() {
       try {
+        const { data: collegeCourseIds } = await supabase
+          .from('courses')
+          .select('id')
+          .eq('college_id', collegeId)
+        const courseIds = (collegeCourseIds ?? []).map((c: { id: string }) => c.id)
         const [
           { count: totalUsers },
           { count: totalProfessors },
@@ -52,19 +59,13 @@ export default function AdminProfilePage() {
           { count: allowedSignupEmailsCount },
           totalCourses,
         ] = await Promise.all([
-          supabase.from('user_profiles').select('id', { count: 'exact', head: true }).then((r) => ({ count: r.count ?? 0 })),
-          supabase.from('user_profiles').select('id', { count: 'exact', head: true }).eq('role', 'professor').then((r) => ({ count: r.count ?? 0 })),
-          supabase.from('course_registrations').select('id', { count: 'exact', head: true }).eq('status', 'pending').then((r) => ({ count: r.count ?? 0 })),
-          supabase.from('allowed_signup_emails').select('id', { count: 'exact', head: true }).then((r) => ({ count: r.count ?? 0 })),
-          (async () => {
-            const { data: { session } } = await supabase.auth.getSession()
-            const headers: Record<string, string> = {}
-            if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
-            const res = await fetch('/api/admin/courses', { method: 'GET', credentials: 'include', headers })
-            if (!res.ok) return 0
-            const json = await res.json().catch(() => ({}))
-            return Array.isArray(json.courses) ? json.courses.length : 0
-          })(),
+          supabase.from('user_profiles').select('id', { count: 'exact', head: true }).eq('college_id', collegeId).then((r) => ({ count: r.count ?? 0 })),
+          supabase.from('user_profiles').select('id', { count: 'exact', head: true }).eq('role', 'professor').eq('college_id', collegeId).then((r) => ({ count: r.count ?? 0 })),
+          courseIds.length > 0
+            ? supabase.from('course_registrations').select('id', { count: 'exact', head: true }).in('course_id', courseIds).eq('status', 'pending').then((r) => ({ count: r.count ?? 0 }))
+            : Promise.resolve({ count: 0 }),
+          supabase.from('allowed_signup_emails').select('id', { count: 'exact', head: true }).eq('college_id', collegeId).then((r) => ({ count: r.count ?? 0 })),
+          Promise.resolve(courseIds.length),
         ])
         if (cancelled) return
         setAdminMetrics({

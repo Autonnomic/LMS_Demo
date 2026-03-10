@@ -31,6 +31,10 @@ export default function DashboardRedirect() {
         router.replace('/reset-password')
         return
       }
+      if (role === 'super_admin') {
+        router.replace('/dashboard/super-admin')
+        return
+      }
       router.replace(`/dashboard/${role}`)
     }
     redirectByRole()

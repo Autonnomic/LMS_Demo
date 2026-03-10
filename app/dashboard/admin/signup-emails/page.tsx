@@ -6,6 +6,7 @@ import type { AllowedSignupEmail } from '../types'
 
 export default function AdminSignupEmailsPage() {
   const [allowedSignupEmails, setAllowedSignupEmails] = useState<AllowedSignupEmail[]>([])
+  const [adminCollegeId, setAdminCollegeId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [newAllowedEmail, setNewAllowedEmail] = useState('')
   const [addingAllowedEmail, setAddingAllowedEmail] = useState(false)
@@ -17,13 +18,15 @@ export default function AdminSignupEmailsPage() {
     if (!user) return
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('role')
+      .select('role, college_id')
       .eq('id', user.id)
       .single()
-    if (!profile || profile.role !== 'admin') return
+    if (!profile || profile.role !== 'admin' || profile.college_id == null) return
+    setAdminCollegeId(Number(profile.college_id))
     const { data } = await supabase
       .from('allowed_signup_emails')
       .select('id, email, created_at')
+      .eq('college_id', profile.college_id)
       .order('created_at', { ascending: false })
     if (data) setAllowedSignupEmails(data as AllowedSignupEmail[])
   }
@@ -84,8 +87,9 @@ export default function AdminSignupEmailsPage() {
             type="button"
             className="btn-primary"
             style={{ padding: '0.5rem 1.25rem', alignSelf: 'flex-start' }}
-            disabled={addingAllowedEmail || !newAllowedEmail.trim()}
+            disabled={addingAllowedEmail || !newAllowedEmail.trim() || adminCollegeId == null}
             onClick={async () => {
+              if (adminCollegeId == null) return
               setError(null)
               setAddingAllowedEmail(true)
               const raw = newAllowedEmail
@@ -103,7 +107,7 @@ export default function AdminSignupEmailsPage() {
                 }
                 const { error: insertError } = await supabase
                   .from('allowed_signup_emails')
-                  .insert({ email })
+                  .insert({ email, college_id: adminCollegeId })
                 if (insertError) {
                   if (insertError.code === '23505') {
                     alreadyInList.push(email)
