@@ -212,7 +212,16 @@ export default function StudentDiscussionsPage() {
             <span className="canvas-topbar-title">Discussions</span>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
               <Notifications />
-              <UserMenu name={userName} initials={userInitials} role="student" />
+              <UserMenu
+                userName={userName}
+                userInitials={userInitials}
+                onLogout={async () => {
+                  const { logout } = await import('@/lib/auth')
+                  await logout()
+                  router.push('/')
+                  router.refresh()
+                }}
+              />
             </div>
           </div>
 
@@ -332,7 +341,7 @@ export default function StudentDiscussionsPage() {
                           {remainingReplies.length > 0 && (
                             <div
                               style={{
-                                maxHeight: '140px',
+                                height: '80px', // show ~1 reply, rest scrollable
                                 overflowY: 'auto',
                                 paddingTop: '0.25rem',
                                 marginTop: '0.15rem',
