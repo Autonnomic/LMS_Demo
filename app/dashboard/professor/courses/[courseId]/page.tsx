@@ -63,6 +63,7 @@ interface Assignment {
   submission_count?: number
   quiz_questions?: QuizQuestion[] | null
   show_grades_to_students?: boolean
+  is_published?: boolean
 }
 
 interface CourseMaterial {
@@ -163,6 +164,7 @@ export default function ProfessorCourseDetail() {
   const [attendanceSummaryLoading, setAttendanceSummaryLoading] = useState(false)
   const [showAttendanceDetails, setShowAttendanceDetails] = useState(false)
   const [exportingGrades, setExportingGrades] = useState(false)
+  const [studentSearchQuery, setStudentSearchQuery] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -359,15 +361,26 @@ export default function ProfessorCourseDetail() {
 
   async function fetchAllStudents() {
     try {
-      const { data: allStudentsData } = await supabase
-        .from('user_profiles')
-        .select('id, first_name, last_name, email')
-        .eq('role', 'student')
-        .order('last_name', { ascending: true })
-      if (allStudentsData) {
-        const enrolledIds = new Set(enrolledStudents.map((s) => s.id))
-        setAllStudents(allStudentsData.filter((s) => !enrolledIds.has(s.id)))
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+
+      const res = await fetch('/api/professor/students', {
+        method: 'GET',
+        headers,
+        credentials: 'include',
+      })
+
+      if (!res.ok) {
+        console.error('Error fetching students list for professor:', await res.text())
+        setAllStudents([])
+        return
       }
+
+      const json = await res.json().catch(() => null)
+      const allStudentsData = (json?.students ?? []) as Student[]
+      const enrolledIds = new Set(enrolledStudents.map((s) => s.id))
+      setAllStudents(allStudentsData.filter((s) => !enrolledIds.has(s.id)))
     } catch (error) {
       console.error('Error fetching all students:', error)
     }
@@ -375,8 +388,16 @@ export default function ProfessorCourseDetail() {
 
   async function fetchCourseData() {
     try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+
       const [courseRes, scheduleRes, enrolledRes] = await Promise.all([
-        supabase.from('courses').select('*').eq('id', courseId).single(),
+        fetch(`/api/professor/courses/${courseId}`, { credentials: 'include', headers }).then(async (r) => {
+          if (!r.ok) return { data: null }
+          const data = await r.json().catch(() => null)
+          return { data }
+        }),
         supabase
           .from('course_schedules')
           .select('*')
@@ -384,9 +405,6 @@ export default function ProfessorCourseDetail() {
           .order('day_of_week', { ascending: true })
           .order('start_time', { ascending: true }),
         (async () => {
-          const { data: { session } } = await supabase.auth.getSession()
-          const headers: Record<string, string> = {}
-          if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
           const res = await fetch(`/api/professor/courses/${courseId}/enrolled`, { credentials: 'include', headers })
           if (!res.ok) return null
           const json = await res.json().catch(() => null)
@@ -563,7 +581,8 @@ export default function ProfessorCourseDetail() {
       setAssignments(
         assignmentsData.map((a: Assignment) => ({
           ...a,
-          submission_count: countByAssignment[a.id] ?? 0
+          submission_count: countByAssignment[a.id] ?? 0,
+          is_published: a.is_published ?? true
         }))
       )
     } catch (error) {
@@ -590,7 +609,9 @@ export default function ProfessorCourseDetail() {
         due_date: dueDateTime,
         max_points: newAssignment.max_points,
         assignment_type: newAssignment.assignment_type || null,
-        instructions: newAssignment.instructions || null
+        instructions: newAssignment.instructions || null,
+        // New assignments start as drafts until professor posts them
+        is_published: false
       }
       if (isQuiz) {
         const valid = quizQuestions.filter((q) => q.question.trim() && q.choices.filter((c) => c.trim()).length >= 2)
@@ -629,51 +650,6 @@ export default function ProfessorCourseDetail() {
       setQuizQuestions([])
       setShowGradesToStudents(false)
       await fetchAssignments()
-      
-      // Create notifications for all enrolled students
-      if (insertedAssignment) {
-        try {
-          const { data: enrolledStudents } = await supabase
-            .from('course_registrations')
-            .select('student_id')
-            .eq('course_id', courseId)
-            .eq('status', 'enrolled')
-
-          if (enrolledStudents) {
-            // Get session token for authentication
-            const { data: { session } } = await supabase.auth.getSession()
-            
-            for (const enrollment of enrolledStudents) {
-              try {
-                const response = await fetch('/api/notifications/create', {
-                  method: 'POST',
-                  headers: { 
-                    'Content-Type': 'application/json',
-                    ...(session?.access_token && { 'Authorization': `Bearer ${session.access_token}` })
-                  },
-                  credentials: 'include',
-                  body: JSON.stringify({
-                    userId: enrollment.student_id,
-                    title: 'New Assignment',
-                    message: `New assignment "${assignmentTitle}" has been posted. Due: ${assignmentDueDate ? new Date(assignmentDueDate).toLocaleString() : 'No due date'}`,
-                    type: 'assignment',
-                    relatedId: insertedAssignment.id
-                  })
-                })
-                if (!response.ok) {
-                  const error = await response.json()
-                  console.error('Failed to create notification:', error)
-                }
-              } catch (err) {
-                console.error('Error creating notification:', err)
-              }
-            }
-          }
-        } catch (notifError) {
-          console.error('Error creating notifications:', notifError)
-          // Don't fail the assignment creation if notifications fail
-        }
-      }
     } catch (error) {
       console.error('Error creating assignment:', error)
       alert('Failed to create assignment')
@@ -757,6 +733,59 @@ export default function ProfessorCourseDetail() {
     } catch (error) {
       console.error('Error deleting assignment:', error)
       alert('Failed to delete assignment')
+    }
+  }
+
+  async function handlePostAssignment(assignment: Assignment) {
+    if (assignment.is_published) return
+    try {
+      const { error } = await supabase
+        .from('assignments')
+        .update({ is_published: true })
+        .eq('id', assignment.id)
+      if (error) throw error
+
+      // Notify enrolled students that a new assignment was posted
+      const { data: enrolledStudents } = await supabase
+        .from('course_registrations')
+        .select('student_id')
+        .eq('course_id', courseId)
+        .eq('status', 'enrolled')
+
+      if (enrolledStudents?.length) {
+        const { data: { session } } = await supabase.auth.getSession()
+        for (const enrollment of enrolledStudents as { student_id: string }[]) {
+          try {
+            const response = await fetch('/api/notifications/create', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(session?.access_token && { Authorization: `Bearer ${session.access_token}` }),
+              },
+              credentials: 'include',
+              body: JSON.stringify({
+                userId: enrollment.student_id,
+                title: 'New Assignment',
+                message: `New assignment "${assignment.title}" has been posted. Due: ${
+                  assignment.due_date ? new Date(assignment.due_date).toLocaleString() : 'No due date'
+                }`,
+                type: 'assignment',
+                relatedId: assignment.id,
+              }),
+            })
+            if (!response.ok) {
+              console.error('Failed to create notification for assignment', assignment.id)
+            }
+          } catch (err) {
+            console.error('Error creating notification:', err)
+          }
+        }
+      }
+
+      await fetchAssignments()
+    } catch (err) {
+      console.error('Error posting assignment:', err)
+      alert('Failed to post assignment')
     }
   }
 
@@ -1776,8 +1805,28 @@ export default function ProfessorCourseDetail() {
               <div className="course-info-card" style={{ marginTop: '2rem' }}>
                 <h3>Add Students to Course</h3>
                 {allStudents.length > 0 ? (
-                  <div className="student-list">
-                    {allStudents.map((student) => (
+                  <>
+                    <div style={{ marginBottom: '1rem', maxWidth: 320 }}>
+                      <input
+                        type="search"
+                        className="form-control"
+                        placeholder="Search by name or email..."
+                        value={studentSearchQuery}
+                        onChange={(e) => setStudentSearchQuery(e.target.value)}
+                        aria-label="Search students to enroll"
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div className="student-list">
+                      {allStudents
+                        .filter((student) => {
+                          const q = studentSearchQuery.trim().toLowerCase()
+                          if (!q) return true
+                          const name = [student.first_name, student.last_name].filter(Boolean).join(' ').toLowerCase()
+                          const email = (student.email ?? '').toLowerCase()
+                          return name.includes(q) || email.includes(q)
+                        })
+                        .map((student) => (
                       <div key={student.id} className="student-item" style={{ justifyContent: 'space-between' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                           <div className="student-avatar">
@@ -1811,6 +1860,7 @@ export default function ProfessorCourseDetail() {
                       </div>
                     ))}
                   </div>
+                  </>
                 ) : (
                   <p style={{ color: 'var(--text-muted)' }}>All students are already enrolled</p>
                 )}
@@ -2243,7 +2293,8 @@ export default function ProfessorCourseDetail() {
                               {assignment.submission_count ?? 0} / {enrolledStudents.length}
                             </td>
                             <td>
-                              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <Link
                                   href={`/dashboard/professor/courses/${courseId}/assignments/${assignment.id}/submissions`}
                                   style={{
@@ -2260,6 +2311,23 @@ export default function ProfessorCourseDetail() {
                                 >
                                   View submissions
                                 </Link>
+                                {!assignment.is_published && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePostAssignment(assignment)}
+                                    style={{
+                                      padding: '0.25rem 0.75rem',
+                                      background: '#10b981',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      cursor: 'pointer',
+                                      fontSize: '0.75rem'
+                                    }}
+                                  >
+                                    Post
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => startEditAssignment(assignment)}
                                   style={{
@@ -2288,6 +2356,10 @@ export default function ProfessorCourseDetail() {
                                 >
                                   Delete
                                 </button>
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: assignment.is_published ? '#10b981' : '#6b7280' }}>
+                                  {assignment.is_published ? 'Posted' : 'Draft'}
+                                </div>
                               </div>
                             </td>
                           </tr>

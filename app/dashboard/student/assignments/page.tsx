@@ -112,6 +112,7 @@ export default function AssignmentsPage() {
             name
           )
         `)
+        .eq('is_published', true)
         .order('due_date', { ascending: true })
 
       // Fetch submissions separately
