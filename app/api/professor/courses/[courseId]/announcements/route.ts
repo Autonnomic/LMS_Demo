@@ -18,7 +18,11 @@ export async function POST(
     }
 
     const body = await request.json()
-    const { title, content } = body
+    const { title, content, sectionId } = body as {
+      title?: string
+      content?: string
+      sectionId?: string | null
+    }
     if (!title || typeof title !== 'string' || title.trim() === '') {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 })
     }
@@ -91,17 +95,39 @@ export async function POST(
       return NextResponse.json({ error: insertError.message }, { status: 500 })
     }
 
-    const { data: enrollments } = await admin
+    let scopedSectionName: string | null = null
+    let sectionScopedId: string | null = null
+    if (typeof sectionId === 'string' && sectionId.trim() !== '') {
+      sectionScopedId = sectionId.trim()
+      const { data: section } = await admin
+        .from('course_sections')
+        .select('id, name')
+        .eq('id', sectionScopedId)
+        .eq('course_id', courseId)
+        .maybeSingle()
+      if (section?.name) {
+        scopedSectionName = section.name
+      }
+    }
+
+    let registrationsQuery = admin
       .from('course_registrations')
       .select('student_id')
       .eq('course_id', courseId)
       .eq('status', 'enrolled')
 
+    if (sectionScopedId) {
+      registrationsQuery = registrationsQuery.eq('section_id', sectionScopedId)
+    }
+
+    const { data: enrollments } = await registrationsQuery
+
     if (enrollments?.length) {
+      const scopeSuffix = scopedSectionName ? ` (${scopedSectionName})` : ''
       const notifications = enrollments.map(({ student_id }) => ({
         user_id: student_id,
         title: announcementTitle,
-        message: notificationMessage,
+        message: `${notificationMessage}${scopeSuffix}`,
         type: 'announcement',
         related_id: courseId,
       }))

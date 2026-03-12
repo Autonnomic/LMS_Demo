@@ -24,6 +24,7 @@ interface Schedule {
   start_time: string
   end_time: string
   location: string | null
+  section_id?: string | null
 }
 
 interface Student {
@@ -34,9 +35,20 @@ interface Student {
   roll_number?: string | null
 }
 
+interface CourseSection {
+  id: string
+  course_id: string
+  name: string
+  description: string | null
+  sort_order: number
+  created_at: string
+}
+
 interface EnrolledStudent extends Student {
   registration_id: string
   registered_at: string
+  section_id?: string | null
+  section?: { id: string; name: string } | null
 }
 
 interface AttendanceRecord {
@@ -64,6 +76,7 @@ interface Assignment {
   quiz_questions?: QuizQuestion[] | null
   show_grades_to_students?: boolean
   is_published?: boolean
+  section_id?: string | null
 }
 
 interface CourseMaterial {
@@ -95,6 +108,17 @@ interface Announcement {
   author?: { first_name: string | null; last_name: string | null } | null
 }
 
+interface CustomClass {
+  id: string
+  course_id: string
+  section_id: string | null
+  class_date: string
+  start_time: string
+  end_time: string
+  location: string | null
+  created_at: string
+}
+
 const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 export default function ProfessorCourseDetail() {
@@ -104,6 +128,7 @@ export default function ProfessorCourseDetail() {
   const [loading, setLoading] = useState(true)
   const [course, setCourse] = useState<Course | null>(null)
   const [schedule, setSchedule] = useState<Schedule[]>([])
+  const [customClasses, setCustomClasses] = useState<CustomClass[]>([])
   const [enrolledStudents, setEnrolledStudents] = useState<EnrolledStudent[]>([])
   const [allStudents, setAllStudents] = useState<Student[]>([])
   const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0])
@@ -114,12 +139,30 @@ export default function ProfessorCourseDetail() {
     day_of_week: 1,
     start_time: '10:00',
     end_time: '11:30',
-    location: ''
+    location: '',
+    section_id: '' as string | null | ''
   })
+  const [newCustomClass, setNewCustomClass] = useState<{
+    class_date: string
+    start_time: string
+    end_time: string
+    location: string
+    section_id: string | null | ''
+  }>({
+    class_date: '',
+    start_time: '10:00',
+    end_time: '11:30',
+    location: '',
+    section_id: ''
+  })
+  const [assignmentSectionId, setAssignmentSectionId] = useState<string | null | ''>('')
+  const [gradesSectionId, setGradesSectionId] = useState<string | null>(null)
+  const [gradesScopeChosen, setGradesScopeChosen] = useState(false)
   const [userName, setUserName] = useState<string>('')
   const [userInitials, setUserInitials] = useState<string>('')
   const [currentUserId, setCurrentUserId] = useState<string>('')
   const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [assignmentSubmissions, setAssignmentSubmissions] = useState<{ assignment_id: string; student_id: string }[]>([])
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null)
   const [showAssignmentForm, setShowAssignmentForm] = useState(false)
   const [viewingDocument, setViewingDocument] = useState<{ url: string; fileName: string } | null>(null)
@@ -165,6 +208,13 @@ export default function ProfessorCourseDetail() {
   const [showAttendanceDetails, setShowAttendanceDetails] = useState(false)
   const [exportingGrades, setExportingGrades] = useState(false)
   const [studentSearchQuery, setStudentSearchQuery] = useState('')
+  const [sections, setSections] = useState<CourseSection[]>([])
+  const [sectionsLoading, setSectionsLoading] = useState(false)
+  const [newSectionName, setNewSectionName] = useState('')
+  const [addingSection, setAddingSection] = useState(false)
+  const [assigningSection, setAssigningSection] = useState<string | null>(null)
+  const [attendanceSectionId, setAttendanceSectionId] = useState<string | null>(null)
+  const [announcementSectionId, setAnnouncementSectionId] = useState<string | null | ''>('')
 
   useEffect(() => {
     let cancelled = false
@@ -196,7 +246,8 @@ export default function ProfessorCourseDetail() {
         await Promise.all([
           fetchCourseData(),
           fetchAssignments(),
-          fetchCourseGrades()
+          fetchCourseGrades(),
+          fetchSections()
         ])
       } catch (error) {
         console.error('Error loading course page:', error)
@@ -214,7 +265,7 @@ export default function ProfessorCourseDetail() {
     }
   }, [attendanceDate, courseId])
 
-  // Defer loading all students until user opens Students tab
+  // Defer loading all students until user opens Students tab (sections loaded on course load)
   useEffect(() => {
     if (activeTab === 'students') {
       fetchAllStudents()
@@ -386,6 +437,104 @@ export default function ProfessorCourseDetail() {
     }
   }
 
+  async function fetchSections() {
+    if (!courseId) return
+    setSectionsLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const res = await fetch(`/api/professor/courses/${courseId}/sections`, { credentials: 'include', headers })
+      if (!res.ok) throw new Error(await res.text())
+      const json = await res.json().catch(() => null)
+      setSections((json?.sections ?? []) as CourseSection[])
+    } catch (error) {
+      console.error('Error fetching sections:', error)
+      setSections([])
+    } finally {
+      setSectionsLoading(false)
+    }
+  }
+
+  async function handleAddSection() {
+    const name = newSectionName.trim()
+    if (!name) return
+    setAddingSection(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const res = await fetch(`/api/professor/courses/${courseId}/sections`, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({ name, sort_order: sections.length }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || res.statusText)
+      }
+      const section = await res.json()
+      setSections((prev) => [...prev, section].sort((a, b) => a.sort_order - b.sort_order))
+      setNewSectionName('')
+    } catch (error) {
+      console.error('Error adding section:', error)
+      alert(error instanceof Error ? error.message : 'Failed to add section')
+    } finally {
+      setAddingSection(false)
+    }
+  }
+
+  async function handleDeleteSection(sectionId: string) {
+    if (!confirm('Delete this section? Students in it will be unassigned (not unenrolled).')) return
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const res = await fetch(`/api/professor/courses/${courseId}/sections/${sectionId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers,
+      })
+      if (!res.ok) throw new Error(await res.text())
+      setSections((prev) => prev.filter((s) => s.id !== sectionId))
+      await fetchCourseData()
+    } catch (error) {
+      console.error('Error deleting section:', error)
+      alert('Failed to delete section')
+    }
+  }
+
+  async function handleAssignSection(registrationId: string, sectionId: string | null) {
+    setAssigningSection(registrationId)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const res = await fetch(`/api/professor/courses/${courseId}/enrolled/assign-section`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify({ registrationId, sectionId }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || res.statusText)
+      }
+      await fetchCourseData()
+    } catch (error) {
+      console.error('Error assigning section:', error)
+      alert(error instanceof Error ? error.message : 'Failed to assign section')
+    } finally {
+      setAssigningSection(null)
+    }
+  }
+
+  function getStudentsInSection(sectionId: string | null | undefined): EnrolledStudent[] {
+    if (sectionId == null || sectionId === '') return enrolledStudents
+    return enrolledStudents.filter((s) => s.section_id === sectionId)
+  }
+
   async function fetchCourseData() {
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -418,6 +567,15 @@ export default function ProfessorCourseDetail() {
         enrolledList = enrolledRes as EnrolledStudent[]
         setEnrolledStudents(enrolledList)
       }
+      // Custom classes
+      const { data: customRes } = await supabase
+        .from('course_custom_classes')
+        .select('*')
+        .eq('course_id', courseId)
+        .order('class_date', { ascending: true })
+        .order('start_time', { ascending: true })
+      if (customRes) setCustomClasses(customRes as CustomClass[])
+
       await fetchAttendanceForDate(attendanceDate)
       if (enrolledList.length > 0) {
         await fetchAttendanceSummary(enrolledList)
@@ -541,6 +699,7 @@ export default function ProfessorCourseDetail() {
         body: JSON.stringify({
           title: newAnnouncement.title.trim(),
           content: newAnnouncement.content.trim(),
+          sectionId: typeof announcementSectionId === 'string' && announcementSectionId !== '' ? announcementSectionId : null,
         }),
       })
       if (!res.ok) {
@@ -571,8 +730,9 @@ export default function ProfessorCourseDetail() {
       const assignmentIds = assignmentsData.map((a: Assignment) => a.id)
       const { data: submissionRows } = await supabase
         .from('assignment_submissions')
-        .select('assignment_id')
+        .select('assignment_id, student_id')
         .in('assignment_id', assignmentIds)
+      setAssignmentSubmissions((submissionRows ?? []) as { assignment_id: string; student_id: string }[])
       const countByAssignment: Record<string, number> = {}
       assignmentIds.forEach((id) => (countByAssignment[id] = 0))
       submissionRows?.forEach((r: { assignment_id: string }) => {
@@ -613,6 +773,11 @@ export default function ProfessorCourseDetail() {
         // New assignments start as drafts until professor posts them
         is_published: false
       }
+      if (assignmentSectionId && typeof assignmentSectionId === 'string') {
+        payload.section_id = assignmentSectionId
+      } else {
+        payload.section_id = null
+      }
       if (isQuiz) {
         const valid = quizQuestions.filter((q) => q.question.trim() && q.choices.filter((c) => c.trim()).length >= 2)
         if (valid.length === 0) {
@@ -647,6 +812,7 @@ export default function ProfessorCourseDetail() {
         assignment_type: '',
         instructions: ''
       })
+      setAssignmentSectionId('')
       setQuizQuestions([])
       setShowGradesToStudents(false)
       await fetchAssignments()
@@ -672,6 +838,11 @@ export default function ProfessorCourseDetail() {
         max_points: newAssignment.max_points,
         assignment_type: newAssignment.assignment_type || null,
         instructions: newAssignment.instructions || null
+      }
+      if (assignmentSectionId && typeof assignmentSectionId === 'string') {
+        updatePayload.section_id = assignmentSectionId
+      } else {
+        updatePayload.section_id = null
       }
       if (newAssignment.assignment_type === 'quiz') {
         const valid = quizQuestions.filter((q) => q.question.trim() && q.choices.filter((c) => c.trim()).length >= 2)
@@ -707,6 +878,7 @@ export default function ProfessorCourseDetail() {
         assignment_type: '',
         instructions: ''
       })
+      setAssignmentSectionId('')
       setQuizQuestions([])
       setShowGradesToStudents(false)
       await fetchAssignments()
@@ -814,6 +986,7 @@ export default function ProfessorCourseDetail() {
       assignment_type: assignment.assignment_type || '',
       instructions: assignment.instructions || ''
     })
+    setAssignmentSectionId(assignment.section_id ?? '')
     const qq = assignment.quiz_questions
     if (Array.isArray(qq) && qq.length > 0) {
       setQuizQuestions(qq.map((q: QuizQuestion) => ({
@@ -896,7 +1069,8 @@ export default function ProfessorCourseDetail() {
           day_of_week: newSchedule.day_of_week,
           start_time: newSchedule.start_time + ':00',
           end_time: newSchedule.end_time + ':00',
-          location: newSchedule.location || null
+          location: newSchedule.location || null,
+          section_id: newSchedule.section_id || null
         })
 
       if (error) throw error
@@ -905,7 +1079,8 @@ export default function ProfessorCourseDetail() {
         day_of_week: 1,
         start_time: '10:00',
         end_time: '11:30',
-        location: ''
+        location: '',
+        section_id: ''
       })
       fetchCourseData()
       alert('Schedule added successfully!')
@@ -923,7 +1098,8 @@ export default function ProfessorCourseDetail() {
           day_of_week: editingSchedule!.day_of_week,
           start_time: editingSchedule!.start_time,
           end_time: editingSchedule!.end_time,
-          location: editingSchedule!.location || null
+          location: editingSchedule!.location || null,
+          section_id: editingSchedule!.section_id || null
         })
         .eq('id', scheduleId)
 
@@ -1250,6 +1426,7 @@ export default function ProfessorCourseDetail() {
                 <div className="course-detail-main">
                   <div className="course-info-card">
                     <h3>Class Schedule</h3>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Applies to all sections</p>
                     {schedule.length > 0 ? (
                       <div>
                         {schedule.map((sched) => (
@@ -1269,37 +1446,17 @@ export default function ProfessorCourseDetail() {
                     )}
                   </div>
 
-                  {/* Grades & Analytics (overview) */}
-                  <div className="course-info-card" style={{ marginTop: '1.5rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <h3>Grades &amp; Analytics</h3>
-                      <button
-                        type="button"
-                        onClick={() => setActiveTab('grades')}
-                        style={{
-                          padding: '0.4rem 0.75rem',
-                          fontSize: '0.875rem',
-                          fontWeight: 500,
-                          color: 'var(--teal-bright)',
-                          background: 'transparent',
-                          border: '1px solid var(--teal-bright)',
-                          borderRadius: '6px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        View full grades →
-                      </button>
-                    </div>
-                    {(() => {
-                      const totalPoints = courseGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
-                      const earnedPoints = courseGrades.reduce((s, g) => s + Number(g.grade), 0)
+                  {/* Section A & Section B blocks */}
+                  <div style={{ display: 'grid', gridTemplateColumns: sections.length >= 2 ? 'repeat(2, 1fr)' : '1fr', gap: '1.5rem', marginTop: '1.5rem' }}>
+                    {(sections.length >= 2 ? sections : [{ id: '', name: 'All students', sort_order: 0 } as CourseSection]).map((sec) => {
+                      const sectionStudents = getStudentsInSection(sec.id)
+                      const sectionSummary = sectionStudents.length ? attendanceSummary.filter((r) => sectionStudents.some((s) => s.id === r.studentId)) : []
+                      const totalPoints = courseGrades.filter((g) => sectionStudents.some((s) => s.id === g.student_id)).reduce((s, g) => s + (g.max_grade || 0), 0)
+                      const earnedPoints = courseGrades.filter((g) => sectionStudents.some((s) => s.id === g.student_id)).reduce((s, g) => s + Number(g.grade), 0)
                       const classAvgPct = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : null
-                      // Count only current assignments that have at least one grade (matches table columns)
-                      const assignmentsGradedCount = assignments.filter((a) =>
-                        courseGrades.some((g) => g.assignment_name === a.title)
-                      ).length
+                      const assignmentsGradedCount = sectionStudents.length ? assignments.filter((a) => courseGrades.some((g) => g.assignment_name === a.title && sectionStudents.some((s) => s.id === g.student_id))).length : 0
                       const perStudentPct: number[] = []
-                      enrolledStudents.forEach((stu) => {
+                      sectionStudents.forEach((stu) => {
                         const stuGrades = courseGrades.filter((g) => g.student_id === stu.id)
                         const stuTotal = stuGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
                         const stuEarned = stuGrades.reduce((s, g) => s + Number(g.grade), 0)
@@ -1313,132 +1470,97 @@ export default function ProfessorCourseDetail() {
                         else if (p >= 60) dist.D++
                         else dist.F++
                       })
-                      const studentsByGradeCount = [...enrolledStudents]
-                        .map((stu) => {
-                          const stuGrades = courseGrades.filter((g) => g.student_id === stu.id)
-                          const total = stuGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
-                          const earned = stuGrades.reduce((s, g) => s + Number(g.grade), 0)
-                          const pct = total > 0 ? Math.round((earned / total) * 100) : null
-                          return { student: stu, count: stuGrades.length, pct }
-                        })
-                        .sort((a, b) => a.count - b.count)
+                      const studentsByGradeCount = sectionStudents.map((stu) => {
+                        const stuGrades = courseGrades.filter((g) => g.student_id === stu.id)
+                        const total = stuGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
+                        const earned = stuGrades.reduce((s, g) => s + Number(g.grade), 0)
+                        const pct = total > 0 ? Math.round((earned / total) * 100) : null
+                        return { student: stu, count: stuGrades.length, pct }
+                      }).sort((a, b) => a.count - b.count)
                       const studentsWithFewerGrades = studentsByGradeCount.slice(0, 10)
+                      const totals = sectionSummary.reduce((acc, r) => ({ present: acc.present + r.present, total: acc.total + r.total }), { present: 0, total: 0 })
+                      const attPct = totals.total > 0 ? Math.round((totals.present / totals.total) * 100) : null
                       return (
-                        <>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.75rem' }}>
-                            <div style={{ padding: '0.75rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                              <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>Class average</div>
-                              <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text)' }}>{classAvgPct != null ? `${classAvgPct}%` : '—'}</div>
+                        <div key={sec.id || 'all'} className="course-info-card" style={{ borderLeft: sec.id ? '4px solid var(--teal-bright)' : undefined }}>
+                          <h3 style={{ marginBottom: '0.5rem' }}>{sec.name}</h3>
+                          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>{sectionStudents.length} students</p>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Grades &amp; Analytics</span>
+                            {sections.length >= 2 && (
+                              <button type="button" onClick={() => setActiveTab('grades')} style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', fontWeight: 500, color: 'var(--teal-bright)', background: 'transparent', border: '1px solid var(--teal-bright)', borderRadius: '6px', cursor: 'pointer' }}>View grades →</button>
+                            )}
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '0.5rem' }}>
+                            <div style={{ padding: '0.5rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Avg</div>
+                              <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{classAvgPct != null ? `${classAvgPct}%` : '—'}</div>
                             </div>
-                            <div style={{ padding: '0.75rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                              <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 2 }}>Assignments graded</div>
-                              <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text)' }}>{assignmentsGradedCount}</div>
+                            <div style={{ padding: '0.5rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Graded</div>
+                              <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{assignmentsGradedCount}</div>
                             </div>
-                            <div style={{ padding: '0.75rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                              <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Distribution</div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', fontSize: '0.75rem' }}>
-                                <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.2)', color: '#059669' }}>A ({dist.A})</span>
-                                <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(59,130,246,0.2)', color: '#2563eb' }}>B ({dist.B})</span>
-                                <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.2)', color: '#d97706' }}>C ({dist.C})</span>
-                                <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(249,115,22,0.2)', color: '#ea580c' }}>D ({dist.D})</span>
-                                <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.2)', color: '#dc2626' }}>F ({dist.F})</span>
-                              </div>
+                            <div style={{ padding: '0.5rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Attendance</div>
+                              <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{attPct != null ? `${attPct}%` : '—'}</div>
                             </div>
                           </div>
-                          {enrolledStudents.length > 0 && (
-                            <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
-                              <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Students with fewer grades (need attention)</div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.875rem' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', fontSize: '0.7rem', marginTop: '0.5rem' }}>
+                            <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(16,185,129,0.2)', color: '#059669' }}>A ({dist.A})</span>
+                            <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(59,130,246,0.2)', color: '#2563eb' }}>B ({dist.B})</span>
+                            <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(245,158,11,0.2)', color: '#d97706' }}>C ({dist.C})</span>
+                            <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(249,115,22,0.2)', color: '#ea580c' }}>D ({dist.D})</span>
+                            <span style={{ padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.2)', color: '#dc2626' }}>F ({dist.F})</span>
+                          </div>
+                          {sectionStudents.length > 0 && studentsWithFewerGrades.length > 0 && (
+                            <div style={{ marginTop: '0.75rem', padding: '0.5rem', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                              <div style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4 }}>Need attention</div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', fontSize: '0.8rem' }}>
                                 {studentsWithFewerGrades.map(({ student, pct }) => (
-                                  <span key={student.id} style={{ padding: '4px 8px', background: 'var(--surface)', borderRadius: '6px', border: '1px solid var(--border)' }}>
-                                    {[student.first_name, student.last_name].filter(Boolean).join(' ') || student.email || 'Unknown'} ({pct != null ? `${pct}%` : '—'})
+                                  <span key={student.id} style={{ padding: '2px 6px', background: 'var(--surface)', borderRadius: '4px', border: '1px solid var(--border)' }}>
+                                    {[student.first_name, student.last_name].filter(Boolean).join(' ') || 'Unknown'} ({pct != null ? `${pct}%` : '—'})
                                   </span>
                                 ))}
                               </div>
                             </div>
                           )}
-                        </>
+                        </div>
                       )
-                    })()}
-                    {courseGrades.length === 0 && assignments.length === 0 && (
-                      <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>Create assignments and grade submissions to see analytics here.</p>
-                    )}
+                    })}
                   </div>
-
                 </div>
 
                 <div className="course-detail-sidebar">
                   <div className="course-info-card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <div>
-                        <h3 style={{ marginBottom: '0.1rem' }}>Attendance report</h3>
-                        {(() => {
-                          const totals = attendanceSummary.reduce(
-                            (acc, r) => ({ present: acc.present + r.present, total: acc.total + r.total }),
-                            { present: 0, total: 0 }
-                          )
-                          const pct = totals.total > 0 ? Math.round((totals.present / totals.total) * 100) : null
-                          return (
-                            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
-                              Overall attendance:{' '}
-                              <span style={{ fontWeight: 600, color: pct != null ? 'var(--text)' : 'var(--text-muted)' }}>
-                                {pct != null ? `${pct}%` : '—'}
-                              </span>
-                            </p>
-                          )
-                        })()}
-                      </div>
+                      <h3 style={{ marginBottom: '0.1rem' }}>Attendance report</h3>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexWrap: 'wrap' }}>
                         {showAttendanceDetails && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={handleExportAttendanceSummary}
-                              style={{
-                                padding: '0.3rem 0.6rem',
-                                fontSize: '0.8rem',
-                                borderRadius: '6px',
-                                border: '1px solid var(--teal-bright)',
-                                background: 'var(--teal-bright)',
-                                color: 'white',
-                                cursor: 'pointer',
-                              }}
-                            >
-                              Export
-                            </button>
-                          </>
+                          <button type="button" onClick={handleExportAttendanceSummary} style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderRadius: '6px', border: '1px solid var(--teal-bright)', background: 'var(--teal-bright)', color: 'white', cursor: 'pointer' }}>Export</button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => setShowAttendanceDetails((v) => !v)}
-                          aria-label={showAttendanceDetails ? 'Hide attendance details' : 'Show attendance details'}
-                          style={{
-                            padding: '0.2rem 0.4rem',
-                            borderRadius: '999px',
-                            border: '1px solid var(--border)',
-                            background: 'var(--bg)',
-                            cursor: 'pointer',
-                            fontSize: '0.8rem',
-                          }}
-                        >
-                          {showAttendanceDetails ? '▲' : '▼'}
-                        </button>
+                        <button type="button" onClick={() => setShowAttendanceDetails((v) => !v)} aria-label={showAttendanceDetails ? 'Hide attendance details' : 'Show attendance details'} style={{ padding: '0.2rem 0.4rem', borderRadius: '999px', border: '1px solid var(--border)', background: 'var(--bg)', cursor: 'pointer', fontSize: '0.8rem' }}>{showAttendanceDetails ? '▲' : '▼'}</button>
                       </div>
                     </div>
+                    {(() => {
+                      const totals = attendanceSummary.reduce((acc, r) => ({ present: acc.present + r.present, total: acc.total + r.total }), { present: 0, total: 0 })
+                      const pct = totals.total > 0 ? Math.round((totals.present / totals.total) * 100) : null
+                      return (
+                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>
+                          Overall: <span style={{ fontWeight: 600, color: pct != null ? 'var(--text)' : 'var(--text-muted)' }}>{pct != null ? `${pct}%` : '—'}</span>
+                        </p>
+                      )
+                    })()}
                     {showAttendanceDetails && (
                       <>
                         {attendanceSummaryLoading ? (
-                          <p style={{ color: 'var(--text-muted)' }}>Loading attendance…</p>
+                          <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>Loading…</p>
                         ) : attendanceSummary.length > 0 ? (
-                          <div style={{ overflowX: 'auto', marginTop: '0.25rem' }}>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 360 }}>
+                          <div style={{ overflowX: 'auto', marginTop: '0.5rem' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 320, fontSize: '0.8rem' }}>
                               <thead>
                                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                                  <th style={{ textAlign: 'left', padding: '0.5rem', fontSize: '0.8rem' }}>Roll no.</th>
-                                  <th style={{ textAlign: 'left', padding: '0.5rem', fontSize: '0.8rem' }}>Student</th>
-                                  <th style={{ textAlign: 'right', padding: '0.5rem', fontSize: '0.8rem' }}>Present</th>
-                                  <th style={{ textAlign: 'right', padding: '0.5rem', fontSize: '0.8rem' }}>Total</th>
-                                  <th style={{ textAlign: 'right', padding: '0.5rem', fontSize: '0.8rem' }}>%</th>
+                                  <th style={{ textAlign: 'left', padding: '0.4rem' }}>Roll</th>
+                                  <th style={{ textAlign: 'left', padding: '0.4rem' }}>Student</th>
+                                  <th style={{ textAlign: 'right', padding: '0.4rem' }}>%</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -1446,22 +1568,9 @@ export default function ProfessorCourseDetail() {
                                   const name = `${row.first_name || ''} ${row.last_name || ''}`.trim() || '—'
                                   return (
                                     <tr key={row.studentId} style={{ borderBottom: '1px solid var(--border)' }}>
-                                      <td style={{ padding: '0.5rem', fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                        {row.roll_number || '—'}
-                                      </td>
-                                      <td style={{ padding: '0.5rem', fontSize: '0.9rem' }}>{name}</td>
-                                      <td style={{ padding: '0.5rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.present}</td>
-                                      <td style={{ padding: '0.5rem', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{row.total}</td>
-                                      <td
-                                        style={{
-                                          padding: '0.5rem',
-                                          textAlign: 'right',
-                                          fontVariantNumeric: 'tabular-nums',
-                                          color: row.total > 0 && row.percentage < 75 ? '#ef4444' : 'var(--text)',
-                                        }}
-                                      >
-                                        {row.total > 0 ? `${row.percentage}%` : '—'}
-                                      </td>
+                                      <td style={{ padding: '0.4rem', color: 'var(--text-muted)' }}>{row.roll_number || '—'}</td>
+                                      <td style={{ padding: '0.4rem' }}>{name}</td>
+                                      <td style={{ padding: '0.4rem', textAlign: 'right', color: row.total > 0 && row.percentage < 75 ? '#ef4444' : 'var(--text)' }}>{row.total > 0 ? `${row.percentage}%` : '—'}</td>
                                     </tr>
                                   )
                                 })}
@@ -1469,15 +1578,12 @@ export default function ProfessorCourseDetail() {
                             </table>
                           </div>
                         ) : (
-                          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-                            No attendance records yet for this course.
-                          </p>
+                          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '0.25rem' }}>No attendance records yet.</p>
                         )}
                       </>
                     )}
                   </div>
                 </div>
-
               </div>
             </div>
           )}
@@ -1486,93 +1592,119 @@ export default function ProfessorCourseDetail() {
           {activeTab === 'attendance' && (
             <div className="professor-tab-content">
               <div className="course-info-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                  <h3>Take Attendance</h3>
-                  <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    <input
-                      type="date"
-                      value={attendanceDate}
-                      onChange={(e) => {
-                        setAttendanceDate(e.target.value)
-                        fetchAttendanceForDate(e.target.value)
-                      }}
-                      style={{
-                        padding: '0.5rem',
-                        border: '1px solid var(--border)',
-                        borderRadius: '8px',
-                        fontSize: '0.875rem'
-                      }}
-                    />
-                    <button
-                      onClick={handleTakeAttendance}
-                      className="btn-primary"
-                      style={{ padding: '0.5rem 1.5rem', width: 'auto' }}
-                    >
-                      Save Attendance
-                    </button>
+                <h3>Take Attendance</h3>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Select a section to see and mark attendance for that section.</p>
+                {sections.length >= 2 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                    {sections.map((sec) => {
+                      const count = getStudentsInSection(sec.id).length
+                      const isSelected = attendanceSectionId === sec.id
+                      return (
+                        <button
+                          key={sec.id}
+                          type="button"
+                          onClick={() => setAttendanceSectionId(sec.id)}
+                          style={{
+                            padding: '0.75rem 1.5rem',
+                            borderRadius: '10px',
+                            border: isSelected ? '2px solid var(--teal-bright)' : '1px solid var(--border)',
+                            background: isSelected ? 'rgba(8, 146, 165, 0.12)' : 'var(--bg)',
+                            color: isSelected ? 'var(--teal-bright)' : 'var(--text)',
+                            fontWeight: isSelected ? 600 : 500,
+                            cursor: 'pointer',
+                            fontSize: '1rem',
+                          }}
+                        >
+                          {sec.name} ({count} students)
+                        </button>
+                      )
+                    })}
                   </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                  <input
+                    type="date"
+                    value={attendanceDate}
+                    onChange={(e) => {
+                      setAttendanceDate(e.target.value)
+                      fetchAttendanceForDate(e.target.value)
+                    }}
+                    style={{ padding: '0.5rem', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '0.875rem' }}
+                  />
+                  <button
+                    onClick={handleTakeAttendance}
+                    className="btn-primary"
+                    style={{ padding: '0.5rem 1.5rem', width: 'auto' }}
+                  >
+                    Save Attendance
+                  </button>
                 </div>
 
-                {enrolledStudents.length > 0 ? (
-                  <div className="attendance-table">
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                      <thead>
-                        <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                          <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: 600 }}>Roll no.</th>
-                          <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: 600 }}>Student</th>
-                          <th style={{ textAlign: 'center', padding: '0.75rem', fontWeight: 600 }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[...enrolledStudents]
-                          .slice()
-                          .sort((a, b) => {
-                            const ra = (a.roll_number || '').toString().toLowerCase()
-                            const rb = (b.roll_number || '').toString().toLowerCase()
-                            if (ra && rb && ra !== rb) return ra.localeCompare(rb, undefined, { numeric: true, sensitivity: 'base' })
-                            if (ra && !rb) return -1
-                            if (!ra && rb) return 1
-                            const nameA = `${a.first_name || ''} ${a.last_name || ''}`.trim().toLowerCase()
-                            const nameB = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase()
-                            return nameA.localeCompare(nameB)
-                          })
-                          .map((student) => {
-                            const currentStatus = attendanceRecords[student.id]?.status || 'present'
-                            return (
-                              <tr key={student.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td style={{ padding: '0.75rem', fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-                                  {student.roll_number || '—'}
-                                </td>
-                                <td style={{ padding: '0.75rem' }}>
-                                  {student.first_name} {student.last_name}
-                                </td>
-                                <td style={{ padding: '0.75rem', textAlign: 'center' }}>
-                                  <select
-                                    value={currentStatus}
-                                    onChange={(e) => updateAttendanceStatus(student.id, e.target.value)}
-                                    style={{
-                                      padding: '0.5rem',
-                                      border: '1px solid var(--border)',
-                                      borderRadius: '6px',
-                                      fontSize: '0.875rem',
-                                      cursor: 'pointer'
-                                    }}
-                                  >
-                                    <option value="present">Present</option>
-                                    <option value="absent">Absent</option>
-                                    <option value="late">Late</option>
-                                    <option value="excused">Excused</option>
-                                  </select>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p style={{ color: 'var(--text-muted)' }}>No students enrolled</p>
-                )}
+                {sections.length >= 2 && !attendanceSectionId ? (
+                  <p style={{ color: 'var(--text-muted)', padding: '1.5rem', textAlign: 'center' }}>Click a section above to see the list of students and mark attendance.</p>
+                ) : (() => {
+                  const studentsToShow = sections.length >= 2 && attendanceSectionId ? getStudentsInSection(attendanceSectionId) : enrolledStudents
+                  if (studentsToShow.length === 0) {
+                    return <p style={{ color: 'var(--text-muted)' }}>{attendanceSectionId ? 'No students in this section.' : 'No students enrolled'}</p>
+                  }
+                  return (
+                    <div className="attendance-table">
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                            <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: 600 }}>Roll no.</th>
+                            <th style={{ textAlign: 'left', padding: '0.75rem', fontWeight: 600 }}>Student</th>
+                            <th style={{ textAlign: 'center', padding: '0.75rem', fontWeight: 600 }}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...studentsToShow]
+                            .sort((a, b) => {
+                              const ra = (a.roll_number || '').toString().toLowerCase()
+                              const rb = (b.roll_number || '').toString().toLowerCase()
+                              if (ra && rb && ra !== rb) return ra.localeCompare(rb, undefined, { numeric: true, sensitivity: 'base' })
+                              if (ra && !rb) return -1
+                              if (!ra && rb) return 1
+                              const nameA = `${a.first_name || ''} ${a.last_name || ''}`.trim().toLowerCase()
+                              const nameB = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase()
+                              return nameA.localeCompare(nameB)
+                            })
+                            .map((student) => {
+                              const currentStatus = attendanceRecords[student.id]?.status || 'present'
+                              return (
+                                <tr key={student.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                                  <td style={{ padding: '0.75rem', fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
+                                    {student.roll_number || '—'}
+                                  </td>
+                                  <td style={{ padding: '0.75rem' }}>
+                                    {student.first_name} {student.last_name}
+                                  </td>
+                                  <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                    <select
+                                      value={currentStatus}
+                                      onChange={(e) => updateAttendanceStatus(student.id, e.target.value)}
+                                      style={{
+                                        padding: '0.5rem',
+                                        border: '1px solid var(--border)',
+                                        borderRadius: '6px',
+                                        fontSize: '0.875rem',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      <option value="present">Present</option>
+                                      <option value="absent">Absent</option>
+                                      <option value="late">Late</option>
+                                      <option value="excused">Excused</option>
+                                    </select>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           )}
@@ -1582,6 +1714,11 @@ export default function ProfessorCourseDetail() {
             <div className="professor-tab-content">
               <div className="course-info-card">
                 <h3>Class Schedule</h3>
+                {sections.length >= 2 && (
+                  <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                    Applies to all sections. {sections.map((s) => `${s.name}: ${getStudentsInSection(s.id).length} students`).join(' • ')}
+                  </p>
+                )}
                 
                 {/* Existing Schedules */}
                 {schedule.length > 0 && (
@@ -1602,6 +1739,21 @@ export default function ProfessorCourseDetail() {
                                 <option key={idx} value={idx}>{day}</option>
                               ))}
                             </select>
+                            {sections.length >= 2 && (
+                              <select
+                                value={editingSchedule.section_id ?? ''}
+                                onChange={(e) => setEditingSchedule({
+                                  ...editingSchedule,
+                                  section_id: e.target.value || null
+                                })}
+                                style={{ padding: '0.5rem', border: '1px solid var(--border)', borderRadius: '6px' }}
+                              >
+                                <option value="">All sections</option>
+                                {sections.map((sec) => (
+                                  <option key={sec.id} value={sec.id}>{sec.name}</option>
+                                ))}
+                              </select>
+                            )}
                             <div style={{ display: 'flex', gap: '0.5rem' }}>
                               <input
                                 type="time"
@@ -1655,9 +1807,12 @@ export default function ProfessorCourseDetail() {
                             <div className="schedule-time">
                               {formatTime(sched.start_time)} - {formatTime(sched.end_time)}
                             </div>
-                            {sched.location && (
-                              <div className="schedule-location">📍 {sched.location}</div>
-                            )}
+                            <div className="schedule-location">
+                              {sections.length >= 2 && sched.section_id
+                                ? `${sections.find((s) => s.id === sched.section_id)?.name || 'Section'} · `
+                                : ''}
+                              {sched.location && <>📍 {sched.location}</>}
+                            </div>
                             <div style={{ position: 'absolute', top: '1rem', right: '1rem', display: 'flex', gap: '0.5rem' }}>
                               <button
                                 onClick={() => setEditingSchedule(sched)}
@@ -1695,6 +1850,126 @@ export default function ProfessorCourseDetail() {
                   </div>
                 )}
 
+                {/* One-off Custom Classes */}
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
+                  <h4 style={{ marginBottom: '0.75rem', fontSize: '1rem', fontWeight: 600 }}>Custom Classes (one-off)</h4>
+                  {customClasses.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem' }}>
+                      {customClasses.map((cls) => {
+                        const date = new Date(cls.class_date + 'T00:00:00')
+                        const sectionName = cls.section_id ? sections.find((s) => s.id === cls.section_id)?.name : null
+                        return (
+                          <div key={cls.id} className="schedule-item" style={{ position: 'relative', paddingRight: '7rem' }}>
+                            <div className="schedule-day">
+                              {date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                            </div>
+                            <div className="schedule-time">
+                              {formatTime(cls.start_time)} - {formatTime(cls.end_time)}
+                            </div>
+                            <div className="schedule-location">
+                              {sectionName ? `${sectionName} · ` : ''}
+                              {cls.location && <>📍 {cls.location}</>}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                      No custom classes scheduled yet.
+                    </p>
+                  )}
+
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <h5 style={{ marginBottom: '0.5rem', fontSize: '0.95rem', fontWeight: 600 }}>Schedule a custom class</h5>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxWidth: 520 }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <input
+                          type="date"
+                          value={newCustomClass.class_date}
+                          onChange={(e) => setNewCustomClass({ ...newCustomClass, class_date: e.target.value })}
+                          style={{ padding: '0.75rem', border: '1px solid var(--border)', borderRadius: '8px', flex: 1, minWidth: 160 }}
+                        />
+                        <input
+                          type="time"
+                          value={newCustomClass.start_time}
+                          onChange={(e) => setNewCustomClass({ ...newCustomClass, start_time: e.target.value })}
+                          style={{ padding: '0.75rem', border: '1px solid var(--border)', borderRadius: '8px', flex: 1, minWidth: 120 }}
+                        />
+                        <input
+                          type="time"
+                          value={newCustomClass.end_time}
+                          onChange={(e) => setNewCustomClass({ ...newCustomClass, end_time: e.target.value })}
+                          style={{ padding: '0.75rem', border: '1px solid var(--border)', borderRadius: '8px', flex: 1, minWidth: 120 }}
+                        />
+                      </div>
+                      {sections.length >= 2 && (
+                        <select
+                          value={newCustomClass.section_id ?? ''}
+                          onChange={(e) => setNewCustomClass({ ...newCustomClass, section_id: e.target.value || '' })}
+                          style={{ padding: '0.75rem', border: '1px solid var(--border)', borderRadius: '8px', maxWidth: 260 }}
+                        >
+                          <option value="">All sections</option>
+                          {sections.map((sec) => (
+                            <option key={sec.id} value={sec.id}>{sec.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      <input
+                        type="text"
+                        placeholder="Classroom / Location (e.g., Room 402)"
+                        value={newCustomClass.location}
+                        onChange={(e) => setNewCustomClass({ ...newCustomClass, location: e.target.value })}
+                        style={{ padding: '0.75rem', border: '1px solid var(--border)', borderRadius: '8px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!newCustomClass.class_date || !newCustomClass.start_time || !newCustomClass.end_time) {
+                            alert('Please select date and time for the custom class.')
+                            return
+                          }
+                          try {
+                            const { error } = await supabase
+                              .from('course_custom_classes')
+                              .insert({
+                                course_id: courseId,
+                                class_date: newCustomClass.class_date,
+                                start_time: newCustomClass.start_time,
+                                end_time: newCustomClass.end_time,
+                                location: newCustomClass.location || null,
+                                section_id: newCustomClass.section_id || null,
+                              })
+                            if (error) throw error
+                            setNewCustomClass({
+                              class_date: '',
+                              start_time: '10:00',
+                              end_time: '11:30',
+                              location: '',
+                              section_id: '',
+                            })
+                            const { data: refreshed } = await supabase
+                              .from('course_custom_classes')
+                              .select('*')
+                              .eq('course_id', courseId)
+                              .order('class_date', { ascending: true })
+                              .order('start_time', { ascending: true })
+                            if (refreshed) setCustomClasses(refreshed as CustomClass[])
+                            alert('Custom class scheduled.')
+                          } catch (e) {
+                            console.error('Error scheduling custom class:', e)
+                            alert('Error scheduling custom class')
+                          }
+                        }}
+                        className="btn-primary"
+                        style={{ padding: '0.75rem 1.5rem', width: 'auto' }}
+                      >
+                        Schedule Custom Class
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Add New Schedule */}
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1.5rem' }}>
                   <h4 style={{ marginBottom: '1rem', fontSize: '1rem', fontWeight: 600 }}>Add New Schedule</h4>
@@ -1711,6 +1986,21 @@ export default function ProfessorCourseDetail() {
                         <option key={idx} value={idx}>{day}</option>
                       ))}
                     </select>
+                    {sections.length >= 2 && (
+                      <select
+                        value={newSchedule.section_id ?? ''}
+                        onChange={(e) => setNewSchedule({
+                          ...newSchedule,
+                          section_id: e.target.value || ''
+                        })}
+                        style={{ padding: '0.75rem', border: '1px solid var(--border)', borderRadius: '8px' }}
+                      >
+                        <option value="">All sections</option>
+                        {sections.map((sec) => (
+                          <option key={sec.id} value={sec.id}>{sec.name}</option>
+                        ))}
+                      </select>
+                    )}
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <input
                         type="time"
@@ -1759,43 +2049,296 @@ export default function ProfessorCourseDetail() {
           {/* Students Tab */}
           {activeTab === 'students' && (
             <div className="professor-tab-content">
+              <div className="course-info-card" style={{ marginBottom: '2rem' }}>
+                <h3>Sections</h3>
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                  Create sections (e.g. Section A, B) and assign enrolled students to them.
+                </p>
+                {sectionsLoading ? (
+                  <p style={{ color: 'var(--text-muted)' }}>Loading sections…</p>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', marginBottom: '1rem' }}>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Section name (e.g. Section A)"
+                        value={newSectionName}
+                        onChange={(e) => setNewSectionName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSection())}
+                        style={{ width: '220px' }}
+                        aria-label="New section name"
+                      />
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={handleAddSection}
+                        disabled={addingSection || !newSectionName.trim()}
+                        style={{ padding: '0.5rem 1rem' }}
+                      >
+                        {addingSection ? 'Adding…' : '+ Add Section'}
+                      </button>
+                    </div>
+                    {sections.length > 0 ? (
+                      <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        {sections.map((sec) => (
+                          <li
+                            key={sec.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              padding: '0.5rem 0.75rem',
+                              background: 'var(--surface-hover)',
+                              borderRadius: '8px',
+                              border: '1px solid var(--border)',
+                            }}
+                          >
+                            <span style={{ fontWeight: 600, color: 'var(--text)' }}>{sec.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSection(sec.id)}
+                              style={{
+                                padding: '0.25rem 0.5rem',
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem',
+                              }}
+                              title="Delete section"
+                            >
+                              Remove
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>No sections yet. Add one above.</p>
+                    )}
+                  </>
+                )}
+              </div>
+
               <div className="course-info-card">
                 <h3>Enrolled Students ({enrolledStudents.length})</h3>
                 {enrolledStudents.length > 0 ? (
-                  <div className="student-list">
+                  <div
+                    className="student-list"
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                      gap: '1.25rem',
+                      alignItems: 'flex-start',
+                    }}
+                  >
+                    {sections.length >= 2 ? (
+                      <>
+                        {sections.map((sec) => {
+                          const inSection = enrolledStudents.filter((s) => s.section_id === sec.id)
+                          if (inSection.length === 0) return null
+                          return (
+                            <div
+                              key={sec.id}
+                              style={{
+                                border: '1px solid var(--border)',
+                                borderRadius: 12,
+                                padding: '0.75rem 0.75rem 0.25rem',
+                                background: 'var(--surface)',
+                              }}
+                            >
+                              <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text)', marginBottom: '0.5rem', paddingBottom: '0.4rem', borderBottom: '2px solid var(--teal-bright)' }}>
+                                {sec.name} ({inSection.length})
+                              </h4>
+                              {inSection.map((student) => (
+                                <div
+                                  key={student.id}
+                                  className="student-item"
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: '1rem',
+                                    padding: '0.5rem 0',
+                                  }}
+                                >
+                                  {/* Name / email */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 }}>
+                                    <div className="student-avatar">
+                                      {(student.first_name?.charAt(0) || '') + (student.last_name?.charAt(0) || '')}
+                                    </div>
+                                    <div className="student-info" style={{ minWidth: 0 }}>
+                                      <div className="student-name" style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                                        {student.first_name} {student.last_name}
+                                      </div>
+                                      {student.email && (
+                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                                          {student.email}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {/* Section + action */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                                    <select
+                                      aria-label="Section"
+                                      value={student.section_id ?? ''}
+                                      onChange={(e) => handleAssignSection(student.registration_id, e.target.value || null)}
+                                      disabled={assigningSection === student.registration_id}
+                                      style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: '0.8rem', minWidth: 130 }}
+                                    >
+                                      <option value="">No section</option>
+                                      {sections.map((s) => (
+                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      onClick={() => handleUnenrollStudent(student.registration_id)}
+                                      style={{ padding: '0.4rem 0.9rem', background: 'var(--error)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+                                    >
+                                      Unenroll
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        })}
+                        {enrolledStudents.filter((s) => !s.section_id).length > 0 && (
+                          <div
+                            style={{
+                              marginBottom: '1.5rem',
+                              border: '1px solid var(--border)',
+                              borderRadius: 12,
+                              padding: '0.75rem 0.75rem 0.25rem',
+                              background: 'var(--surface)',
+                            }}
+                          >
+                            <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.5rem', paddingBottom: '0.4rem', borderBottom: '1px solid var(--border)' }}>
+                              No section ({enrolledStudents.filter((s) => !s.section_id).length})
+                            </h4>
+                            {enrolledStudents.filter((s) => !s.section_id).map((student) => (
+                              <div
+                                key={student.id}
+                                className="student-item"
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: '1rem',
+                                  padding: '0.5rem 0',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 }}>
+                                  <div className="student-avatar">
+                                    {(student.first_name?.charAt(0) || '') + (student.last_name?.charAt(0) || '')}
+                                  </div>
+                                  <div className="student-info" style={{ minWidth: 0 }}>
+                                    <div className="student-name" style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                                      {student.first_name} {student.last_name}
+                                    </div>
+                                    {student.email && (
+                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                                        {student.email}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                                  <select
+                                    aria-label="Section"
+                                    value={student.section_id ?? ''}
+                                    onChange={(e) => handleAssignSection(student.registration_id, e.target.value || null)}
+                                    disabled={assigningSection === student.registration_id}
+                                    style={{ padding: '0.4rem 0.6rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: '0.8rem', minWidth: 130 }}
+                                  >
+                                    <option value="">No section</option>
+                                    {sections.map((s) => (
+                                      <option key={s.id} value={s.id}>{s.name}</option>
+                                    ))}
+                                  </select>
+                                  <button
+                                    onClick={() => handleUnenrollStudent(student.registration_id)}
+                                    style={{ padding: '0.4rem 0.9rem', background: 'var(--error)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+                                  >
+                                    Unenroll
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
                     {enrolledStudents.map((student) => (
-                      <div key={student.id} className="student-item" style={{ justifyContent: 'space-between' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div
+                        key={student.id}
+                        className="student-item"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '1rem',
+                          padding: '0.5rem 0',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0, flex: 1 }}>
                           <div className="student-avatar">
                             {(student.first_name?.charAt(0) || '') + (student.last_name?.charAt(0) || '')}
                           </div>
-                          <div className="student-info">
-                            <div className="student-name">
+                          <div className="student-info" style={{ minWidth: 0 }}>
+                            <div className="student-name" style={{ whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                               {student.first_name} {student.last_name}
                             </div>
                             {student.email && (
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                                 {student.email}
                               </div>
                             )}
                           </div>
                         </div>
-                        <button
-                          onClick={() => handleUnenrollStudent(student.registration_id)}
-                          style={{
-                            padding: '0.5rem 1rem',
-                            background: 'var(--error)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            fontSize: '0.875rem'
-                          }}
-                        >
-                          Unenroll
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                          <select
+                            id={`section-${student.registration_id}`}
+                            aria-label="Section"
+                            value={student.section_id ?? ''}
+                            onChange={(e) => handleAssignSection(student.registration_id, e.target.value || null)}
+                            disabled={assigningSection === student.registration_id}
+                            style={{
+                              padding: '0.4rem 0.6rem',
+                              borderRadius: '6px',
+                              border: '1px solid var(--border)',
+                              background: 'var(--bg)',
+                              color: 'var(--text)',
+                              fontSize: '0.8rem',
+                              minWidth: 130,
+                            }}
+                          >
+                            <option value="">No section</option>
+                            {sections.map((sec) => (
+                              <option key={sec.id} value={sec.id}>{sec.name}</option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => handleUnenrollStudent(student.registration_id)}
+                            style={{
+                              padding: '0.4rem 0.9rem',
+                              background: 'var(--error)',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: 'pointer',
+                              fontSize: '0.8rem',
+                            }}
+                          >
+                            Unenroll
+                          </button>
+                        </div>
                       </div>
                     ))}
+                      </>
+                    )}
                   </div>
                 ) : (
                   <p style={{ color: 'var(--text-muted)' }}>No students enrolled</p>
@@ -1887,6 +2430,7 @@ export default function ProfessorCourseDetail() {
                     })
                     setQuizQuestions([])
                     setShowGradesToStudents(false)
+                    setAssignmentSectionId('')
                     setShowAssignmentForm(true)
                   }}
                   className="btn-primary"
@@ -1935,13 +2479,13 @@ export default function ProfessorCourseDetail() {
 
               {/* Assignment Form */}
               {showAssignmentForm && (
-                <div style={{ marginBottom: '2rem', padding: '1.5rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-                  <h4 style={{ marginBottom: '1rem', color: 'var(--text)' }}>
+                <div style={{ marginBottom: '1.25rem', padding: '1rem', background: 'white', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                  <h4 style={{ marginBottom: '0.75rem', color: 'var(--text)', fontSize: '0.95rem' }}>
                     {editingAssignment ? 'Edit Assignment' : 'Create New Assignment'}
                   </h4>
                   <form onSubmit={editingAssignment ? handleUpdateAssignment : handleCreateAssignment}>
-                    <div className="form-group" style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                    <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500, color: 'var(--text)', fontSize: '0.85rem' }}>
                         Title *
                       </label>
                       <input
@@ -1954,8 +2498,8 @@ export default function ProfessorCourseDetail() {
                       />
                     </div>
 
-                    <div className="form-group" style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                    <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500, color: 'var(--text)', fontSize: '0.85rem' }}>
                         Description
                       </label>
                       <textarea
@@ -1967,9 +2511,9 @@ export default function ProfessorCourseDetail() {
                       />
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
                       <div className="form-group">
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                        <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500, color: 'var(--text)', fontSize: '0.85rem' }}>
                           Due Date *
                         </label>
                         <input
@@ -1982,7 +2526,7 @@ export default function ProfessorCourseDetail() {
                       </div>
 
                       <div className="form-group">
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                        <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500, color: 'var(--text)', fontSize: '0.85rem' }}>
                           Due Time
                         </label>
                         <input
@@ -1994,7 +2538,7 @@ export default function ProfessorCourseDetail() {
                       </div>
 
                       <div className="form-group">
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                        <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500, color: 'var(--text)', fontSize: '0.85rem' }}>
                           Max Points *
                         </label>
                         <input
@@ -2009,7 +2553,7 @@ export default function ProfessorCourseDetail() {
                       </div>
 
                       <div className="form-group">
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                        <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500, color: 'var(--text)', fontSize: '0.85rem' }}>
                           Type
                         </label>
                         <select
@@ -2035,8 +2579,26 @@ export default function ProfessorCourseDetail() {
                       </div>
                     </div>
 
-                    <div className="form-group" style={{ marginBottom: '1rem' }}>
-                      <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                    {sections.length > 0 && (
+                      <div className="form-group" style={{ marginBottom: '0.75rem', maxWidth: 220 }}>
+                        <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500, color: 'var(--text)', fontSize: '0.85rem' }}>
+                          Section
+                        </label>
+                        <select
+                          value={assignmentSectionId ?? ''}
+                          onChange={(e) => setAssignmentSectionId(e.target.value || '')}
+                          className="form-control"
+                        >
+                          <option value="">All sections</option>
+                          {sections.map((sec) => (
+                            <option key={sec.id} value={sec.id}>{sec.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                      <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500, color: 'var(--text)', fontSize: '0.85rem' }}>
                         Instructions
                       </label>
                       <textarea
@@ -2049,9 +2611,9 @@ export default function ProfessorCourseDetail() {
                     </div>
 
                     {newAssignment.assignment_type === 'quiz' && (
-                      <div className="form-group" style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                          <label style={{ fontWeight: 600, color: 'var(--text)' }}>Quiz questions</label>
+                      <div className="form-group" style={{ marginBottom: '1rem', padding: '0.75rem', background: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <label style={{ fontWeight: 600, color: 'var(--text)', fontSize: '0.9rem' }}>Quiz questions</label>
                           <button
                             type="button"
                             onClick={() => setQuizQuestions([...quizQuestions, { question: '', choices: ['', ''], correct_index: 0 }])}
@@ -2062,7 +2624,7 @@ export default function ProfessorCourseDetail() {
                           </button>
                         </div>
                         {quizQuestions.map((q, qIdx) => (
-                          <div key={qIdx} style={{ marginBottom: '1.25rem', padding: '1rem', background: '#fff', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
+                          <div key={qIdx} style={{ marginBottom: '0.9rem', padding: '0.75rem', background: '#fff', borderRadius: '6px', border: '1px solid #e5e7eb' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
                               <span style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--text)' }}>Question {qIdx + 1}</span>
                               <button
@@ -2246,7 +2808,14 @@ export default function ProfessorCourseDetail() {
                         <th>Type</th>
                         <th>Due Date</th>
                         <th>Points</th>
-                        <th>Submitted</th>
+                        {sections.length >= 2 ? (
+                          <>
+                            <th style={{ fontSize: '0.8rem' }}>Section A</th>
+                            <th style={{ fontSize: '0.8rem' }}>Section B</th>
+                          </>
+                        ) : (
+                          <th>Submitted</th>
+                        )}
                         <th>Actions</th>
                       </tr>
                     </thead>
@@ -2254,6 +2823,10 @@ export default function ProfessorCourseDetail() {
                       {assignments.map((assignment) => {
                         const dueDate = new Date(assignment.due_date)
                         const isOverdue = dueDate < new Date()
+                        const sectionACount = sections.length >= 2 ? assignmentSubmissions.filter((s) => s.assignment_id === assignment.id && getStudentsInSection(sections[0]?.id).some((st) => st.id === s.student_id)).length : 0
+                        const sectionBCount = sections.length >= 2 ? assignmentSubmissions.filter((s) => s.assignment_id === assignment.id && sections[1] && getStudentsInSection(sections[1].id).some((st) => st.id === s.student_id)).length : 0
+                        const sectionATotal = sections.length >= 2 ? getStudentsInSection(sections[0]?.id).length : 0
+                        const sectionBTotal = sections.length >= 2 && sections[1] ? getStudentsInSection(sections[1].id).length : 0
                         return (
                           <tr key={assignment.id}>
                             <td>
@@ -2289,9 +2862,16 @@ export default function ProfessorCourseDetail() {
                               </div>
                             </td>
                             <td>{assignment.max_points}</td>
-                            <td style={{ fontSize: '0.875rem', color: 'var(--text)' }}>
-                              {assignment.submission_count ?? 0} / {enrolledStudents.length}
-                            </td>
+                            {sections.length >= 2 ? (
+                              <>
+                                <td style={{ fontSize: '0.875rem', color: 'var(--text)' }}>{sectionACount} / {sectionATotal}</td>
+                                <td style={{ fontSize: '0.875rem', color: 'var(--text)' }}>{sectionBCount} / {sectionBTotal}</td>
+                              </>
+                            ) : (
+                              <td style={{ fontSize: '0.875rem', color: 'var(--text)' }}>
+                                {assignment.submission_count ?? 0} / {enrolledStudents.length}
+                              </td>
+                            )}
                             <td>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2387,8 +2967,11 @@ export default function ProfessorCourseDetail() {
           {/* Grades & Analytics Tab */}
           {activeTab === 'grades' && (
             <div className="professor-tab-content">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <h3 style={{ margin: 0, color: 'var(--navy-dark)' }}>Grades &amp; Analytics</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0, color: 'var(--navy-dark)', fontSize: '1rem' }}>Grades &amp; Analytics</h3>
+                {sections.length >= 2 && (
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 0 }}>Click a section card to filter details.</p>
+                )}
                 {assignments.length > 0 && enrolledStudents.length > 0 && (
                   <button
                     type="button"
@@ -2411,21 +2994,87 @@ export default function ProfessorCourseDetail() {
                 )}
               </div>
 
-              {/* Analytics cards */}
+              {/* Section overview cards */}
               {(() => {
-                const totalPoints = courseGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
-                const earnedPoints = courseGrades.reduce((s, g) => s + Number(g.grade), 0)
+                const scopes: { id: string | null; name: string }[] =
+                  sections.length >= 2 ? [{ id: null, name: 'All sections' }, ...sections.map((s) => ({ id: s.id, name: s.name }))] : [{ id: null, name: 'All sections' }]
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                    {scopes.map((scope) => {
+                      const studentsInScope = getStudentsInSection(scope.id)
+                      const gradesInScope = courseGrades.filter((g) => studentsInScope.some((s) => s.id === g.student_id))
+                      const total = gradesInScope.reduce((s, g) => s + (g.max_grade || 0), 0)
+                      const earned = gradesInScope.reduce((s, g) => s + Number(g.grade), 0)
+                      const avgPct = total > 0 ? Math.round((earned / total) * 100) : null
+                      const perStudentPct: number[] = []
+                      studentsInScope.forEach((stu) => {
+                        const stuGrades = gradesInScope.filter((g) => g.student_id === stu.id)
+                        const stuTotal = stuGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
+                        const stuEarn = stuGrades.reduce((s, g) => s + Number(g.grade), 0)
+                        if (stuTotal > 0) perStudentPct.push((stuEarn / stuTotal) * 100)
+                      })
+                      const dist = { A: 0, B: 0, C: 0, D: 0, F: 0 }
+                      perStudentPct.forEach((p) => {
+                        if (p >= 90) dist.A++
+                        else if (p >= 80) dist.B++
+                        else if (p >= 70) dist.C++
+                        else if (p >= 60) dist.D++
+                        else dist.F++
+                      })
+                      const isSelected = (scope.id || null) === (gradesSectionId || null)
+                      return (
+                        <button
+                          key={scope.id ?? 'all'}
+                          type="button"
+                          onClick={() => {
+                            setGradesSectionId(scope.id || null)
+                            setGradesScopeChosen(true)
+                          }}
+                          style={{
+                            textAlign: 'left',
+                            padding: '0.6rem 0.7rem',
+                            borderRadius: 10,
+                            border: isSelected ? '2px solid var(--teal-bright)' : '1px solid var(--border)',
+                            background: isSelected ? 'rgba(8,146,165,0.08)' : 'var(--surface)',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.2rem',
+                          }}
+                        >
+                          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text)' }}>{scope.name}</span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{studentsInScope.length} students</span>
+                          <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text)' }}>{avgPct != null ? `${avgPct}% avg` : '—'}</span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                            A:{dist.A} B:{dist.B} C:{dist.C} D:{dist.D} F:{dist.F}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+
+              {/* Grades details: only after a section card is chosen */}
+              {gradesScopeChosen ? (() => {
+                const gradesStudents = gradesSectionId ? getStudentsInSection(gradesSectionId) : enrolledStudents
+                const gradesInScope = courseGrades.filter((g) =>
+                  gradesStudents.some((s) => s.id === g.student_id)
+                )
+
+                const totalPoints = gradesInScope.reduce((s, g) => s + (g.max_grade || 0), 0)
+                const earnedPoints = gradesInScope.reduce((s, g) => s + Number(g.grade), 0)
                 const classAvgPct = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0
-                // Count only current assignments that have at least one grade (matches table columns)
                 const assignmentsGradedCount = assignments.filter((a) =>
-                  courseGrades.some((g) => g.assignment_name === a.title)
+                  gradesInScope.some((g) => g.assignment_name === a.title)
                 ).length
+
                 const perStudentPct: number[] = []
-                enrolledStudents.forEach((stu) => {
-                  const stuGrades = courseGrades.filter((g) => g.student_id === stu.id)
+                gradesStudents.forEach((stu) => {
+                  const stuGrades = gradesInScope.filter((g) => g.student_id === stu.id)
                   const stuTotal = stuGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
-                  const stuEarned = stuGrades.reduce((s, g) => s + Number(g.grade), 0)
-                  if (stuTotal > 0) perStudentPct.push((stuEarned / stuTotal) * 100)
+                  const stuEarn = stuGrades.reduce((s, g) => s + Number(g.grade), 0)
+                  if (stuTotal > 0) perStudentPct.push((stuEarn / stuTotal) * 100)
                 })
                 const dist = { A: 0, B: 0, C: 0, D: 0, F: 0 }
                 perStudentPct.forEach((p) => {
@@ -2435,9 +3084,9 @@ export default function ProfessorCourseDetail() {
                   else if (p >= 60) dist.D++
                   else dist.F++
                 })
-                const studentsByGradeCount = [...enrolledStudents]
+                const studentsByGradeCount = [...gradesStudents]
                   .map((stu) => {
-                    const stuGrades = courseGrades.filter((g) => g.student_id === stu.id)
+                    const stuGrades = gradesInScope.filter((g) => g.student_id === stu.id)
                     const total = stuGrades.reduce((s, g) => s + (g.max_grade || 0), 0)
                     const earned = stuGrades.reduce((s, g) => s + Number(g.grade), 0)
                     const pct = total > 0 ? Math.round((earned / total) * 100) : null
@@ -2445,21 +3094,32 @@ export default function ProfessorCourseDetail() {
                   })
                   .sort((a, b) => a.count - b.count)
                 const studentsWithFewerGrades = studentsByGradeCount.slice(0, 15)
+
+                const scopeLabel =
+                  gradesSectionId && sections.length > 0
+                    ? sections.find((s) => s.id === gradesSectionId)?.name || 'Section'
+                    : 'All sections'
+
                 return (
-                  <>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-                      <div style={{ padding: '1rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Class average</div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text)' }}>{classAvgPct}%</div>
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '0.75rem' }}>
+                      {scopeLabel} — {gradesStudents.length} students
+                    </h4>
+
+                    {/* Analytics cards for selected scope */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '0.9rem', marginBottom: '1.25rem' }}>
+                      <div style={{ padding: '0.8rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Average</div>
+                        <div style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text)' }}>{classAvgPct}%</div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>{earnedPoints.toFixed(0)} / {totalPoints.toFixed(0)} pts</div>
                       </div>
-                      <div style={{ padding: '1rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                      <div style={{ padding: '0.8rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
                         <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>Assignments graded</div>
-                        <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text)' }}>{assignmentsGradedCount}</div>
+                        <div style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text)' }}>{assignmentsGradedCount}</div>
                       </div>
-                      <div style={{ padding: '1rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                      <div style={{ padding: '0.8rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
                         <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Grade distribution</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '0.8rem' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.8rem' }}>
                           <span style={{ padding: '2px 8px', borderRadius: 4, background: 'rgba(16,185,129,0.2)', color: '#059669' }}>A 90+ ({dist.A})</span>
                           <span style={{ padding: '2px 8px', borderRadius: 4, background: 'rgba(59,130,246,0.2)', color: '#2563eb' }}>B 80–89 ({dist.B})</span>
                           <span style={{ padding: '2px 8px', borderRadius: 4, background: 'rgba(245,158,11,0.2)', color: '#d97706' }}>C 70–79 ({dist.C})</span>
@@ -2468,83 +3128,79 @@ export default function ProfessorCourseDetail() {
                         </div>
                       </div>
                     </div>
-                    {enrolledStudents.length > 0 && (
-                      <div style={{ marginBottom: '2rem', padding: '1rem', background: 'var(--surface-hover)', borderRadius: 12, border: '1px solid var(--border)' }}>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>Students with fewer grades (need attention)</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '0.9rem' }}>
+
+                    {gradesStudents.length > 0 && (
+                      <div style={{ marginBottom: '1.5rem', padding: '0.8rem', background: 'var(--surface-hover)', borderRadius: 12, border: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Students with fewer grades</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.85rem' }}>
                           {studentsWithFewerGrades.map(({ student, pct }) => (
-                            <span key={student.id} style={{ padding: '6px 10px', background: 'var(--surface)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                            <span key={student.id} style={{ padding: '4px 8px', background: 'var(--surface)', borderRadius: '8px', border: '1px solid var(--border)' }}>
                               {[student.first_name, student.last_name].filter(Boolean).join(' ') || student.email || 'Unknown'} ({pct != null ? `${pct}%` : '—'})
                             </span>
                           ))}
                         </div>
                       </div>
                     )}
-                  </>
-                )
-              })()}
 
-              {/* Grades table */}
-              <div style={{ overflowX: 'auto' }}>
-                <table className="table" style={{ minWidth: 560, tableLayout: 'auto' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'var(--navy-dark)', zIndex: 1 }}>
-                        Student
-                      </th>
-                      {assignments.map((a) => (
-                        <th
-                          key={a.id}
-                          style={{
-                            textAlign: 'center',
-                            whiteSpace: 'nowrap',
-                            minWidth: 110,
-                            maxWidth: 160,
-                            padding: '0.35rem 0.5rem',
-                            fontSize: '0.8rem',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                          }}
-                          title={a.title}
-                        >
-                          {a.title.length > 20 ? a.title.slice(0, 18) + '…' : a.title}
-                        </th>
-                      ))}
-                      <th style={{ textAlign: 'center', whiteSpace: 'nowrap', fontWeight: 600, minWidth: 90 }}>Average</th>
-                    </tr>
-                    {/* Class average row */}
-                    {assignments.length > 0 && (
-                      <tr style={{ background: 'var(--surface-hover)', fontSize: '0.85rem' }}>
-                        <td style={{ color: 'var(--text-muted)', fontWeight: 600, position: 'sticky', left: 0, background: 'var(--surface-hover)', zIndex: 1 }}>Class avg</td>
-                        {assignments.map((a) => {
-                          const gs = courseGrades.filter((g) => g.assignment_name === a.title)
-                          const total = gs.reduce((s, g) => s + (g.max_grade || 0), 0)
-                          const earned = gs.reduce((s, g) => s + Number(g.grade), 0)
-                          const pct = total > 0 ? Math.round((earned / total) * 100) : null
-                          return (
-                            <td key={a.id} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-                              {pct != null ? `${pct}%` : '—'}
-                            </td>
-                          )
-                        })}
-                        <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontWeight: 600 }}>
-                          {courseGrades.length > 0
-                            ? `${Math.round((courseGrades.reduce((s, g) => s + Number(g.grade), 0) / courseGrades.reduce((s, g) => s + (g.max_grade || 0), 0)) * 100)}%`
-                            : '—'}
-                        </td>
-                      </tr>
-                    )}
-                  </thead>
-                  <tbody>
-                    {enrolledStudents.length === 0 ? (
-                      <tr>
-                        <td colSpan={(assignments.length + 2)} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
-                          No enrolled students
-                        </td>
-                      </tr>
-                    ) : (
-                      enrolledStudents.map((student) => {
-                        const stuGrades = courseGrades.filter((g) => g.student_id === student.id)
+                    {/* Grades table for selected scope */}
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="table" style={{ minWidth: 560, tableLayout: 'auto' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'var(--navy-dark)', zIndex: 1 }}>
+                              Student
+                            </th>
+                            {assignments.map((a) => (
+                              <th
+                                key={a.id}
+                                style={{
+                                  textAlign: 'center',
+                                  whiteSpace: 'nowrap',
+                                  minWidth: 110,
+                                  maxWidth: 160,
+                                  padding: '0.35rem 0.5rem',
+                                  fontSize: '0.8rem',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                                title={a.title}
+                              >
+                                {a.title.length > 20 ? a.title.slice(0, 18) + '…' : a.title}
+                              </th>
+                            ))}
+                            <th style={{ textAlign: 'center', whiteSpace: 'nowrap', fontWeight: 600, minWidth: 90 }}>Average</th>
+                          </tr>
+                          {/* Class average row */}
+                          {assignments.length > 0 && gradesStudents.length > 0 && (
+                            <tr style={{ background: 'var(--surface-hover)', fontSize: '0.85rem' }}>
+                              <td style={{ color: 'var(--text-muted)', fontWeight: 600, position: 'sticky', left: 0, background: 'var(--surface-hover)', zIndex: 1 }}>Class avg</td>
+                              {assignments.map((a) => {
+                                const gs = gradesInScope.filter((g) => g.assignment_name === a.title)
+                                const total = gs.reduce((s, g) => s + (g.max_grade || 0), 0)
+                                const earned = gs.reduce((s, g) => s + Number(g.grade), 0)
+                                const pct = total > 0 ? Math.round((earned / total) * 100) : null
+                                return (
+                                  <td key={a.id} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                                    {pct != null ? `${pct}%` : '—'}
+                                  </td>
+                                )
+                              })}
+                              <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontWeight: 600 }}>
+                                {classAvgPct > 0 ? `${classAvgPct}%` : '—'}
+                              </td>
+                            </tr>
+                          )}
+                        </thead>
+                        <tbody>
+                          {gradesStudents.length === 0 ? (
+                            <tr>
+                              <td colSpan={(assignments.length + 2)} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
+                                No students in this scope
+                              </td>
+                            </tr>
+                          ) : (
+                      gradesStudents.map((student) => {
+                        const stuGrades = gradesInScope.filter((g) => g.student_id === student.id)
                         let totalPoints = 0
                         let earnedPoints = 0
                         stuGrades.forEach((g) => {
@@ -2576,7 +3232,14 @@ export default function ProfessorCourseDetail() {
                     )}
                   </tbody>
                 </table>
-              </div>
+                    </div>
+                  </div>
+                )
+              })() : (
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
+                  Select a section card above to see its students and grades.
+                </p>
+              )}
               {assignments.length === 0 && (
                 <p style={{ color: 'var(--text-muted)', marginTop: '1rem' }}>
                   Create assignments and grade submissions in the Assignments tab to see grades and analytics here.
@@ -2588,6 +3251,9 @@ export default function ProfessorCourseDetail() {
           {/* Materials Tab */}
           {activeTab === 'materials' && (
             <div className="professor-tab-content">
+              {sections.length >= 2 && (
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>Available to all sections (Section A &amp; Section B).</p>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                 <h3>Course materials (PDF only)</h3>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', background: 'var(--teal-bright)', color: 'white', borderRadius: '8px', cursor: materialUploading ? 'not-allowed' : 'pointer', fontWeight: 500, fontSize: '0.9rem' }}>
@@ -2691,9 +3357,43 @@ export default function ProfessorCourseDetail() {
             <div>
               <h3 style={{ marginBottom: '1rem' }}>Announcements</h3>
               <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-                Post an announcement to notify all enrolled students. They will see a notification: &quot;New announcement posted by [you] for [this course].&quot;
+                Post an announcement to notify enrolled students. Choose a specific section below to notify only that section, or leave it as &quot;All sections&quot; to reach everyone in the course.
               </p>
               <form onSubmit={handlePostAnnouncement} style={{ marginBottom: '1.5rem' }}>
+                <div style={{ marginBottom: '0.75rem', maxWidth: 320 }}>
+                  <label
+                    htmlFor="ann-section"
+                    style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.25rem' }}
+                  >
+                    Section
+                  </label>
+                  <select
+                    id="ann-section"
+                    value={announcementSectionId ?? ''}
+                    onChange={(e) =>
+                      setAnnouncementSectionId(e.target.value === '' ? '' : e.target.value)
+                    }
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.75rem',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      backgroundColor: 'var(--background)',
+                    }}
+                  >
+                    <option value="">All sections</option>
+                    {sections.map((section) => (
+                      <option key={section.id} value={section.id}>
+                        {section.name}
+                      </option>
+                    ))}
+                  </select>
+                  {sections.length === 0 && (
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                      No sections defined yet. This announcement will go to all enrolled students.
+                    </p>
+                  )}
+                </div>
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label htmlFor="ann-title" style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.25rem' }}>Title</label>
                   <input

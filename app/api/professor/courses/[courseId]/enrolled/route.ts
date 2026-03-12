@@ -66,7 +66,7 @@ export async function GET(
 
     const { data: regs, error: regError } = await admin
       .from('course_registrations')
-      .select('id, student_id, registered_at')
+      .select('id, student_id, registered_at, section_id, course_sections(id, name)')
       .eq('course_id', courseId)
       .eq('status', 'enrolled')
       .order('registered_at', { ascending: false })
@@ -89,6 +89,9 @@ export async function GET(
 
     const enrolled = regs.map((reg) => {
       const p = profileMap.get(reg.student_id)
+      const section = reg.course_sections && typeof reg.course_sections === 'object' && !Array.isArray(reg.course_sections)
+        ? { id: (reg.course_sections as { id: string }).id, name: (reg.course_sections as { name: string }).name }
+        : null
       return {
         id: p?.id ?? reg.student_id,
         first_name: p?.first_name ?? null,
@@ -97,6 +100,8 @@ export async function GET(
         roll_number: p?.roll_number ?? null,
         registration_id: reg.id,
         registered_at: reg.registered_at,
+        section_id: reg.section_id ?? null,
+        section: section,
       }
     })
 
