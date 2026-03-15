@@ -46,6 +46,9 @@ interface Submission {
   file_name: string | null
   submission_files?: SubmissionFile[] | null
   submission_text: string | null
+  first_submission_text?: string | null
+  first_submission_files?: SubmissionFile[] | null
+  resubmission_files?: SubmissionFile[] | null
   status: string
   grade: number | null
   feedback: string | null
@@ -65,7 +68,7 @@ export default function AssignmentDetailPage() {
   const [userId, setUserId] = useState<string>('')
   const [submitting, setSubmitting] = useState(false)
   const [submissionText, setSubmissionText] = useState('')
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [fileSlots, setFileSlots] = useState<File[][]>([[]])
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -272,32 +275,51 @@ export default function AssignmentDetailPage() {
         return
       }
 
-      const invalidFile = selectedFiles.find((f) => !isPdfFile(f))
+      const allNewFiles = fileSlots.flat().filter(Boolean)
+      const invalidFile = allNewFiles.find((f) => !isPdfFile(f))
       if (invalidFile) {
         setError('Only PDF files are accepted. Please upload .pdf files only.')
         return
       }
-
       let submissionFilesList: SubmissionFile[] = []
+      const newFilesOnly: SubmissionFile[] = []
       if (submission?.submission_files && Array.isArray(submission.submission_files) && submission.submission_files.length > 0) {
         submissionFilesList = [...submission.submission_files]
       } else if (submission?.file_url && submission?.file_name) {
         submissionFilesList = [{ file_url: submission.file_url, file_name: submission.file_name }]
       }
-      if (selectedFiles.length > 0) {
-        for (const file of selectedFiles) {
+      if (allNewFiles.length > 0) {
+        for (const file of allNewFiles) {
           const url = await handleFileUpload(file)
-          if (url) submissionFilesList.push({ file_url: url, file_name: file.name })
+          if (url) {
+            const entry = { file_url: url, file_name: file.name }
+            submissionFilesList.push(entry)
+            if (canUpdateOnce) newFilesOnly.push(entry)
+          }
         }
       }
       const firstFile = submissionFilesList[0] ?? null
-      const submissionPayload = {
+      const submissionPayload: Record<string, unknown> = {
         submission_text: submissionText || null,
         file_url: firstFile?.file_url ?? null,
         file_name: firstFile?.file_name ?? null,
         submission_files: submissionFilesList.length > 0 ? submissionFilesList : null,
         status: 'submitted',
-        ...(canUpdateOnce ? { updated_at: new Date().toISOString() } : {})
+      }
+      if (canUpdateOnce) {
+        submissionPayload.updated_at = new Date().toISOString()
+        submissionPayload.resubmission_files = newFilesOnly.length > 0 ? newFilesOnly : null
+        const existingFirstText = (submission as Submission).first_submission_text
+        const existingFirstFiles = (submission as Submission).first_submission_files
+        if (existingFirstText == null && existingFirstFiles == null) {
+          submissionPayload.first_submission_text = submission!.submission_text ?? null
+          const prevFiles = submission!.submission_files && Array.isArray(submission.submission_files) && submission.submission_files.length > 0
+            ? submission.submission_files
+            : submission!.file_url && submission!.file_name
+              ? [{ file_url: submission.file_url, file_name: submission.file_name }]
+              : null
+          submissionPayload.first_submission_files = prevFiles
+        }
       }
 
       if (canUpdateOnce) {
@@ -310,7 +332,8 @@ export default function AssignmentDetailPage() {
         const submissionData = {
           assignment_id: assignmentId,
           student_id: user.id,
-          ...submissionPayload
+          ...submissionPayload,
+          updated_at: null,
         }
         const { error: insertError } = await supabase
           .from('assignment_submissions')
@@ -321,6 +344,7 @@ export default function AssignmentDetailPage() {
       setSuccess(canUpdateOnce ? 'Submission updated successfully!' : 'Assignment submitted successfully!')
       await fetchAssignmentData()
       setSelectedFiles([])
+      setFileSlots([[]])
     } catch (error: any) {
       console.error('Error submitting assignment:', error)
       setError(error.message || 'Failed to submit assignment')
@@ -621,10 +645,10 @@ export default function AssignmentDetailPage() {
             border: '1px solid #e5e7eb'
           }}>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem', color: 'var(--text)' }}>
-              {submission ? 'Update Submission' : 'Submit Assignment'}
+              {submission ? 'Resubmit assignment (one time only)' : 'Submit Assignment'}
             </h2>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-              You can upload multiple PDF files per submission. {submission ? 'You can update once after your first submission.' : 'You can submit once and update once.'}
+              You can upload multiple PDF files. {submission ? 'You can resubmit only once after your first submission. After that, no further changes are allowed.' : 'After submitting, you may resubmit once if you need to replace or add files.'}
             </p>
 
             <form onSubmit={handleSubmit}>
@@ -643,38 +667,126 @@ export default function AssignmentDetailPage() {
               </div>
 
               <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-                <label htmlFor="file-upload" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
                   {submission ? 'Upload more PDFs (optional; adds to existing files)' : 'Upload PDFs (optional)'}
                 </label>
-                <input
-                  id="file-upload"
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  multiple
-                  onChange={(e) => {
-                    const files = Array.from(e.target.files || [])
-                    const invalid = files.find((f) => !isPdfFile(f))
-                    if (invalid) {
-                      setError('Only PDF files are accepted.')
-                      setSelectedFiles([])
-                      e.target.value = ''
-                      return
-                    }
-                    setError(null)
-                    setSelectedFiles(files)
-                    e.target.value = ''
-                  }}
-                  className="form-control"
-                  style={{ padding: '0.5rem' }}
-                />
-                {submission && (submission.submission_files?.length || (submission.file_url && submission.file_name)) && selectedFiles.length === 0 && (
+                {fileSlots.map((slotFiles, slotIdx) => (
+                  <div key={slotIdx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                    <input
+                      id={`file-upload-${slotIdx}`}
+                      type="file"
+                      accept=".pdf,application/pdf"
+                      multiple
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || [])
+                        const invalid = files.find((f) => !isPdfFile(f))
+                        if (invalid) {
+                          setError('Only PDF files are accepted.')
+                          e.target.value = ''
+                          return
+                        }
+                        setError(null)
+                        setFileSlots((prev) => {
+                          const next = [...prev]
+                          next[slotIdx] = files
+                          return next
+                        })
+                        e.target.value = ''
+                      }}
+                      className="form-control"
+                      style={{ padding: '0.5rem', flex: 1 }}
+                    />
+                    {slotIdx === fileSlots.length - 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => setFileSlots((prev) => [...prev, []])}
+                        title="Add another file"
+                        style={{
+                          padding: '0.5rem 0.75rem',
+                          background: 'var(--teal-bright)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '1.25rem',
+                          lineHeight: 1,
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                      >
+                        +
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setFileSlots((prev) => prev.filter((_, i) => i !== slotIdx))}
+                        title="Remove this file input"
+                        style={{
+                          padding: '0.5rem 0.75rem',
+                          background: '#6b7280',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          fontSize: '1rem',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        −
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {submission && (submission.submission_files?.length || (submission.file_url && submission.file_name)) && fileSlots.flat().length === 0 && (
                   <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
                     Current files: {(submission.submission_files ?? (submission.file_name ? [{ file_name: submission.file_name }] : [])).map((f) => f.file_name).join(', ')}
                   </div>
                 )}
-                {selectedFiles.length > 0 && (
-                  <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                    New files ({selectedFiles.length}): {selectedFiles.map((f) => f.name).join(', ')}
+                {fileSlots.flat().length > 0 && (
+                  <div style={{ marginTop: '0.75rem' }}>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>Chosen files ({fileSlots.flat().length})</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      {fileSlots.map((slotFiles, slotIdx) =>
+                        slotFiles.map((file, fileIdx) => (
+                          <div
+                            key={`${slotIdx}-${fileIdx}-${file.name}`}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              padding: '0.35rem 0.5rem',
+                              background: '#f3f4f6',
+                              borderRadius: '6px',
+                              fontSize: '0.875rem',
+                              color: 'var(--text)'
+                            }}
+                          >
+                            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFileSlots((prev) =>
+                                  prev.map((slot, sIdx) =>
+                                    sIdx === slotIdx ? slot.filter((_, fIdx) => fIdx !== fileIdx) : slot
+                                  )
+                                )
+                              }}
+                              title="Remove this file"
+                              style={{
+                                padding: '0.2rem 0.4rem',
+                                background: '#dc2626',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                fontSize: '0.875rem',
+                                cursor: 'pointer',
+                                lineHeight: 1
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -683,9 +795,9 @@ export default function AssignmentDetailPage() {
                 <button
                   type="submit"
                   className="btn-primary"
-                  disabled={submitting || uploading || (!submissionText && selectedFiles.length === 0 && !(submission?.file_url) && !(submission?.submission_files?.length))}
+                  disabled={submitting || uploading || (!submissionText && fileSlots.flat().length === 0 && !(submission?.file_url) && !(submission?.submission_files?.length))}
                 >
-                  {uploading ? 'Uploading...' : submitting ? (submission ? 'Updating...' : 'Submitting...') : submission ? 'Update Submission' : 'Submit Assignment'}
+                  {uploading ? 'Uploading...' : submitting ? (submission ? 'Resubmitting...' : 'Submitting...') : submission ? 'Resubmit (1 time only)' : 'Submit Assignment'}
                 </button>
                 {submission && (
                   <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
@@ -706,7 +818,7 @@ export default function AssignmentDetailPage() {
             border: '1px solid #e5e7eb'
           }}>
             <p style={{ fontSize: '0.9375rem', color: 'var(--text-muted)' }}>
-              You have submitted and used your one update. No further changes are allowed.
+              You have used your one allowed resubmit. No further changes are allowed.
             </p>
           </div>
           )}
@@ -724,15 +836,101 @@ export default function AssignmentDetailPage() {
               <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem', color: 'var(--text)' }}>
                 Submission Details
               </h2>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div>
-                  <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                    Submitted At
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {assignment.assignment_type === 'quiz' ? (
+                  <div>
+                    <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                      Submitted At
+                    </div>
+                    <div style={{ fontSize: '1rem', color: 'var(--text)' }}>
+                      {formatDate(submission.submitted_at)}
+                    </div>
                   </div>
-                  <div style={{ fontSize: '1rem', color: 'var(--text)' }}>
-                    {formatDate(submission.submitted_at)}
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    <div style={{ padding: '1rem', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>
+                        1st submission
+                      </h3>
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                        Submitted at: {formatDate(submission.submitted_at)}
+                      </div>
+                      {(submission.first_submission_text ?? submission.submission_text) && (
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.9375rem', color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+                          {submission.first_submission_text ?? submission.submission_text}
+                        </div>
+                      )}
+                      {(() => {
+                        const firstFiles = submission.updated_at != null
+                          ? (submission.first_submission_files ?? [])
+                          : (submission.submission_files ?? (submission.file_url && submission.file_name ? [{ file_url: submission.file_url, file_name: submission.file_name }] : []))
+                        return firstFiles.length > 0 && (
+                        <div style={{ marginTop: '0.5rem' }}>
+                          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>Files</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            {firstFiles.map((f: SubmissionFile, idx: number) => (
+                              <div key={idx} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingDocument({ url: f.file_url, fileName: f.file_name || 'document' })}
+                                  style={{ padding: '0.25rem 0.5rem', background: 'var(--teal-bright)', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8125rem', cursor: 'pointer' }}
+                                >
+                                  View
+                                </button>
+                                <a href={f.file_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--teal-bright)', textDecoration: 'none', fontSize: '0.875rem' }}>
+                                  {f.file_name} ↗
+                                </a>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        )
+                      })()}
+                    </div>
+                    {submission.updated_at != null && (() => {
+                      const resubmitFiles = (submission.resubmission_files && submission.resubmission_files.length > 0)
+                        ? submission.resubmission_files
+                        : (submission.submission_files ?? (submission.file_url && submission.file_name ? [{ file_url: submission.file_url, file_name: submission.file_name }] : []))
+                      return (
+                      <div style={{ padding: '1rem', background: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+                        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: 'var(--text)' }}>
+                          Resubmission
+                        </h3>
+                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                          Resubmitted at: {formatDate(submission.updated_at)}
+                        </div>
+                        {submission.submission_text && (
+                          <div style={{ marginTop: '0.5rem', fontSize: '0.9375rem', color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+                            {submission.submission_text}
+                          </div>
+                        )}
+                        {resubmitFiles.length > 0 && (
+                          <div style={{ marginTop: '0.5rem' }}>
+                            <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                              {submission.resubmission_files?.length ? 'Files (added in resubmission)' : 'Submitted files'}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                              {resubmitFiles.map((f: SubmissionFile, idx: number) => (
+                                <div key={idx} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setViewingDocument({ url: f.file_url, fileName: f.file_name || 'document' })}
+                                    style={{ padding: '0.25rem 0.5rem', background: 'var(--teal-bright)', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8125rem', cursor: 'pointer' }}
+                                  >
+                                    View
+                                  </button>
+                                  <a href={f.file_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--teal-bright)', textDecoration: 'none', fontSize: '0.875rem' }}>
+                                    {f.file_name} ↗
+                                  </a>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )})()}
+                  </>
+                )}
 
                 {assignment.assignment_type === 'quiz' ? (
                   <>
@@ -782,42 +980,6 @@ export default function AssignmentDetailPage() {
                   </>
                 ) : (
                   <>
-                    {(submission.submission_files?.length || (submission.file_url && submission.file_name)) ? (
-                      <div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-                          Submitted Files
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                          {(submission.submission_files ?? [{ file_url: submission.file_url!, file_name: submission.file_name || 'document' }]).map((f, idx) => (
-                            <div key={idx} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-                              <button
-                                type="button"
-                                onClick={() => setViewingDocument({ url: f.file_url, fileName: f.file_name || 'document' })}
-                                style={{
-                                  padding: '0.375rem 0.75rem',
-                                  background: 'var(--teal-bright)',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  fontSize: '0.875rem',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                View
-                              </button>
-                              <a
-                                href={f.file_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                style={{ color: 'var(--teal-bright)', textDecoration: 'none', fontSize: '0.875rem' }}
-                              >
-                                {f.file_name} ↗
-                              </a>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
                     {submission.grade !== null && (
                       <div>
                         <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
