@@ -33,12 +33,18 @@ interface Assignment {
   show_grades_to_students?: boolean
 }
 
+interface SubmissionFile {
+  file_url: string
+  file_name: string
+}
+
 interface Submission {
   id: string
   submitted_at: string
   updated_at: string | null
   file_url: string | null
   file_name: string | null
+  submission_files?: SubmissionFile[] | null
   submission_text: string | null
   status: string
   grade: number | null
@@ -59,7 +65,7 @@ export default function AssignmentDetailPage() {
   const [userId, setUserId] = useState<string>('')
   const [submitting, setSubmitting] = useState(false)
   const [submissionText, setSubmissionText] = useState('')
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -266,22 +272,30 @@ export default function AssignmentDetailPage() {
         return
       }
 
-      if (selectedFile && !isPdfFile(selectedFile)) {
-        setError('Only PDF files are accepted. Please upload a .pdf file.')
+      const invalidFile = selectedFiles.find((f) => !isPdfFile(f))
+      if (invalidFile) {
+        setError('Only PDF files are accepted. Please upload .pdf files only.')
         return
       }
 
-      let fileUrl: string | null = submission?.file_url ?? null
-      let fileName: string | null = submission?.file_name ?? null
-      if (selectedFile) {
-        fileUrl = await handleFileUpload(selectedFile)
-        fileName = selectedFile.name
+      let submissionFilesList: SubmissionFile[] = []
+      if (submission?.submission_files && Array.isArray(submission.submission_files) && submission.submission_files.length > 0) {
+        submissionFilesList = [...submission.submission_files]
+      } else if (submission?.file_url && submission?.file_name) {
+        submissionFilesList = [{ file_url: submission.file_url, file_name: submission.file_name }]
       }
-
+      if (selectedFiles.length > 0) {
+        for (const file of selectedFiles) {
+          const url = await handleFileUpload(file)
+          if (url) submissionFilesList.push({ file_url: url, file_name: file.name })
+        }
+      }
+      const firstFile = submissionFilesList[0] ?? null
       const submissionPayload = {
         submission_text: submissionText || null,
-        file_url: fileUrl,
-        file_name: fileName,
+        file_url: firstFile?.file_url ?? null,
+        file_name: firstFile?.file_name ?? null,
+        submission_files: submissionFilesList.length > 0 ? submissionFilesList : null,
         status: 'submitted',
         ...(canUpdateOnce ? { updated_at: new Date().toISOString() } : {})
       }
@@ -306,7 +320,7 @@ export default function AssignmentDetailPage() {
 
       setSuccess(canUpdateOnce ? 'Submission updated successfully!' : 'Assignment submitted successfully!')
       await fetchAssignmentData()
-      setSelectedFile(null)
+      setSelectedFiles([])
     } catch (error: any) {
       console.error('Error submitting assignment:', error)
       setError(error.message || 'Failed to submit assignment')
@@ -610,7 +624,7 @@ export default function AssignmentDetailPage() {
               {submission ? 'Update Submission' : 'Submit Assignment'}
             </h2>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-              Only PDF files are accepted. {submission ? 'You can update once after your first submission.' : 'You can submit once and update once.'}
+              You can upload multiple PDF files per submission. {submission ? 'You can update once after your first submission.' : 'You can submit once and update once.'}
             </p>
 
             <form onSubmit={handleSubmit}>
@@ -630,34 +644,37 @@ export default function AssignmentDetailPage() {
 
               <div className="form-group" style={{ marginBottom: '1.5rem' }}>
                 <label htmlFor="file-upload" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500, color: 'var(--text)' }}>
-                  {submission ? 'Upload new PDF (optional; keeps current file if not changed)' : 'Upload PDF (optional)'}
+                  {submission ? 'Upload more PDFs (optional; adds to existing files)' : 'Upload PDFs (optional)'}
                 </label>
                 <input
                   id="file-upload"
                   type="file"
                   accept=".pdf,application/pdf"
+                  multiple
                   onChange={(e) => {
-                    const file = e.target.files?.[0] || null
-                    if (file && !isPdfFile(file)) {
+                    const files = Array.from(e.target.files || [])
+                    const invalid = files.find((f) => !isPdfFile(f))
+                    if (invalid) {
                       setError('Only PDF files are accepted.')
-                      setSelectedFile(null)
+                      setSelectedFiles([])
                       e.target.value = ''
                       return
                     }
                     setError(null)
-                    setSelectedFile(file)
+                    setSelectedFiles(files)
+                    e.target.value = ''
                   }}
                   className="form-control"
                   style={{ padding: '0.5rem' }}
                 />
-                {submission?.file_name && !selectedFile && (
+                {submission && (submission.submission_files?.length || (submission.file_url && submission.file_name)) && selectedFiles.length === 0 && (
                   <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                    Current file: {submission.file_name}
+                    Current files: {(submission.submission_files ?? (submission.file_name ? [{ file_name: submission.file_name }] : [])).map((f) => f.file_name).join(', ')}
                   </div>
                 )}
-                {selectedFile && (
+                {selectedFiles.length > 0 && (
                   <div style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                    New file: {selectedFile.name}
+                    New files ({selectedFiles.length}): {selectedFiles.map((f) => f.name).join(', ')}
                   </div>
                 )}
               </div>
@@ -666,7 +683,7 @@ export default function AssignmentDetailPage() {
                 <button
                   type="submit"
                   className="btn-primary"
-                  disabled={submitting || uploading || (!submissionText && !selectedFile && !(submission?.file_url))}
+                  disabled={submitting || uploading || (!submissionText && selectedFiles.length === 0 && !(submission?.file_url) && !(submission?.submission_files?.length))}
                 >
                   {uploading ? 'Uploading...' : submitting ? (submission ? 'Updating...' : 'Submitting...') : submission ? 'Update Submission' : 'Submit Assignment'}
                 </button>
@@ -765,39 +782,42 @@ export default function AssignmentDetailPage() {
                   </>
                 ) : (
                   <>
-                    {submission.file_name && (
+                    {(submission.submission_files?.length || (submission.file_url && submission.file_name)) ? (
                       <div>
-                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                          Submitted File
+                        <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                          Submitted Files
                         </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
-                          <button
-                            type="button"
-                            onClick={() => submission.file_url && setViewingDocument({ url: submission.file_url, fileName: submission.file_name || 'document' })}
-                            disabled={!submission.file_url}
-                            style={{
-                              padding: '0.375rem 0.75rem',
-                              background: 'var(--teal-bright)',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              fontSize: '0.875rem',
-                              cursor: submission.file_url ? 'pointer' : 'not-allowed'
-                            }}
-                          >
-                            View
-                          </button>
-                          <a 
-                            href={submission.file_url || '#'} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            style={{ color: 'var(--teal-bright)', textDecoration: 'none', fontSize: '0.875rem' }}
-                          >
-                            {submission.file_name} ↗
-                          </a>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          {(submission.submission_files ?? [{ file_url: submission.file_url!, file_name: submission.file_name || 'document' }]).map((f, idx) => (
+                            <div key={idx} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => setViewingDocument({ url: f.file_url, fileName: f.file_name || 'document' })}
+                                style={{
+                                  padding: '0.375rem 0.75rem',
+                                  background: 'var(--teal-bright)',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '0.875rem',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                View
+                              </button>
+                              <a
+                                href={f.file_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ color: 'var(--teal-bright)', textDecoration: 'none', fontSize: '0.875rem' }}
+                              >
+                                {f.file_name} ↗
+                              </a>
+                            </div>
+                          ))}
                         </div>
                       </div>
-                    )}
+                    ) : null}
                     {submission.grade !== null && (
                       <div>
                         <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import AutonnomicLogo from './AutonnomicLogo'
@@ -14,6 +14,16 @@ interface Course {
   name: string
 }
 
+interface StudentGroup {
+  groupId: string
+  groupName: string
+  assignmentId: string
+  assignmentTitle: string
+  courseId: string | null
+  courseName: string
+  courseCode: string
+}
+
 interface SidebarProps {
   courses: Course[]
 }
@@ -22,8 +32,31 @@ export default function Sidebar({ courses }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [coursesExpanded, setCoursesExpanded] = useState(true)
+  const [groupsExpanded, setGroupsExpanded] = useState(true)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [studentGroups, setStudentGroups] = useState<StudentGroup[]>([])
   const { unreadTotal } = useChat()
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadGroups() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.access_token || cancelled) return
+        const res = await fetch('/api/student/groups', {
+          credentials: 'include',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        if (!res.ok || cancelled) return
+        const json = await res.json().catch(() => ({}))
+        if (!cancelled) setStudentGroups(json?.groups ?? [])
+      } catch {
+        // ignore
+      }
+    }
+    loadGroups()
+    return () => { cancelled = true }
+  }, [])
 
   async function handleLogout() {
     const { logout } = await import('@/lib/auth'); await logout()
@@ -41,6 +74,10 @@ export default function Sidebar({ courses }: SidebarProps) {
 
   const isCourseActive = (courseId: string) => {
     return pathname === `/dashboard/student/courses/${courseId}`
+  }
+
+  const isGroupActive = (groupId: string) => {
+    return pathname === `/dashboard/student/groups/${groupId}`
   }
 
   const isGradesActive = () => {
@@ -216,6 +253,39 @@ export default function Sidebar({ courses }: SidebarProps) {
           <span className="nav-text">Logout</span>
         </button>
       </nav>
+
+      {studentGroups.length > 0 && (
+        <div className="canvas-courses-section" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <button
+            className="courses-section-header"
+            onClick={() => setGroupsExpanded(!groupsExpanded)}
+          >
+            <div className="canvas-courses-section-title">My Groups</div>
+            <svg
+              className={`expand-icon ${groupsExpanded ? 'expanded' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div className={`courses-list ${groupsExpanded ? 'expanded' : 'collapsed'}`}>
+            {studentGroups.map((g) => (
+              <Link
+                key={g.groupId}
+                href={`/dashboard/student/groups/${g.groupId}`}
+                className={`canvas-course-link ${isGroupActive(g.groupId) ? 'active' : ''}`}
+              >
+                <span className="course-name" style={{ fontWeight: 600 }}>{g.courseName}</span>
+                <span className="course-code-small" style={{ marginTop: '0.15rem', display: 'block' }}>{g.groupName}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
       
       <div className="canvas-courses-section">
         <button

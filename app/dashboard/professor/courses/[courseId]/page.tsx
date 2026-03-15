@@ -77,6 +77,15 @@ interface Assignment {
   show_grades_to_students?: boolean
   is_published?: boolean
   section_id?: string | null
+  is_group_assignment?: boolean
+  group_size?: number | null
+}
+
+interface AssignmentGroup {
+  id: string
+  name: string
+  sort_order: number
+  students: { id: string; first_name: string | null; last_name: string | null; email?: string | null }[]
 }
 
 interface CourseMaterial {
@@ -191,8 +200,14 @@ export default function ProfessorCourseDetail() {
     { name: 'Quiz', type: 'quiz', points: 50, description: 'Short quiz assessment' },
     { name: 'Project', type: 'project', points: 200, description: 'Major project assignment' },
     { name: 'Exam', type: 'exam', points: 300, description: 'Final exam' },
-    { name: 'Lab', type: 'lab', points: 100, description: 'Laboratory assignment' }
+    { name: 'Lab', type: 'lab', points: 100, description: 'Laboratory assignment' },
+    { name: 'Group Assignment', type: 'group_assignment', points: 100, description: 'Group work; students are randomly assigned to groups' },
+    { name: 'Group Project', type: 'group_project', points: 200, description: 'Group project; students are randomly assigned to groups' }
   ])
+  const [groupSize, setGroupSize] = useState<number>(3)
+  const [assignmentGroups, setAssignmentGroups] = useState<Record<string, AssignmentGroup[]>>({})
+  const [creatingGroupsFor, setCreatingGroupsFor] = useState<string | null>(null)
+  const [loadingGroupsFor, setLoadingGroupsFor] = useState<string | null>(null)
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestion[]>([])
   const [showGradesToStudents, setShowGradesToStudents] = useState(false)
   const [attendanceSummary, setAttendanceSummary] = useState<{
@@ -718,33 +733,29 @@ export default function ProfessorCourseDetail() {
 
   async function fetchAssignments() {
     try {
-      const { data: assignmentsData } = await supabase
-        .from('assignments')
-        .select('*')
-        .eq('course_id', courseId)
-        .order('due_date', { ascending: true })
-      if (!assignmentsData?.length) {
-        if (assignmentsData) setAssignments(assignmentsData)
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const res = await fetch(`/api/professor/courses/${courseId}/assignments`, { credentials: 'include', headers })
+      if (!res.ok) {
+        console.error('Error fetching assignments:', await res.text())
         return
       }
-      const assignmentIds = assignmentsData.map((a: Assignment) => a.id)
-      const { data: submissionRows } = await supabase
-        .from('assignment_submissions')
-        .select('assignment_id, student_id')
-        .in('assignment_id', assignmentIds)
-      setAssignmentSubmissions((submissionRows ?? []) as { assignment_id: string; student_id: string }[])
-      const countByAssignment: Record<string, number> = {}
-      assignmentIds.forEach((id) => (countByAssignment[id] = 0))
-      submissionRows?.forEach((r: { assignment_id: string }) => {
-        countByAssignment[r.assignment_id] = (countByAssignment[r.assignment_id] || 0) + 1
-      })
-      setAssignments(
-        assignmentsData.map((a: Assignment) => ({
-          ...a,
-          submission_count: countByAssignment[a.id] ?? 0,
-          is_published: a.is_published ?? true
-        }))
-      )
+      const json = await res.json().catch(() => ({}))
+      const assignmentsList = (json?.assignments ?? []) as Assignment[]
+      const submissionCounts = (json?.submissionCounts ?? {}) as Record<string, number>
+      setAssignments(assignmentsList)
+      // Build submission list for section counts (we don't get full rows from GET; reuse existing or leave empty)
+      if (assignmentsList.length > 0) {
+        const ids = assignmentsList.map((a) => a.id)
+        const { data: submissionRows } = await supabase
+          .from('assignment_submissions')
+          .select('assignment_id, student_id')
+          .in('assignment_id', ids)
+        setAssignmentSubmissions((submissionRows ?? []) as { assignment_id: string; student_id: string }[])
+      } else {
+        setAssignmentSubmissions([])
+      }
     } catch (error) {
       console.error('Error fetching assignments:', error)
     }
@@ -762,6 +773,7 @@ export default function ProfessorCourseDetail() {
       const assignmentDueDate = dueDateTime
 
       const isQuiz = newAssignment.assignment_type === 'quiz'
+      const isGroupType = newAssignment.assignment_type === 'group_assignment' || newAssignment.assignment_type === 'group_project'
       const payload: Record<string, unknown> = {
         course_id: courseId,
         title: newAssignment.title,
@@ -777,6 +789,11 @@ export default function ProfessorCourseDetail() {
         payload.section_id = assignmentSectionId
       } else {
         payload.section_id = null
+      }
+      // Only send group fields when creating a group assignment (requires migration 20250311100000)
+      if (isGroupType) {
+        payload.is_group_assignment = true
+        payload.group_size = Math.max(2, groupSize)
       }
       if (isQuiz) {
         const valid = quizQuestions.filter((q) => q.question.trim() && q.choices.filter((c) => c.trim()).length >= 2)
@@ -794,13 +811,36 @@ export default function ProfessorCourseDetail() {
         payload.show_grades_to_students = false
       }
 
-      const { data: insertedAssignment, error } = await supabase
-        .from('assignments')
-        .insert(payload)
-        .select()
-        .single()
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
 
-      if (error) throw error
+      const body: Record<string, unknown> = {
+        title: payload.title,
+        description: payload.description,
+        due_date: payload.due_date,
+        max_points: payload.max_points,
+        assignment_type: payload.assignment_type,
+        instructions: payload.instructions,
+        section_id: payload.section_id ?? undefined,
+      }
+      if (isGroupType) {
+        body.is_group_assignment = true
+        body.group_size = payload.group_size
+      }
+      if (isQuiz) {
+        body.quiz_questions = payload.quiz_questions
+        body.show_grades_to_students = payload.show_grades_to_students
+      }
+
+      const res = await fetch(`/api/professor/courses/${courseId}/assignments`, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || res.statusText || 'Failed to create assignment')
 
       setShowAssignmentForm(false)
       setNewAssignment({
@@ -818,7 +858,8 @@ export default function ProfessorCourseDetail() {
       await fetchAssignments()
     } catch (error) {
       console.error('Error creating assignment:', error)
-      alert('Failed to create assignment')
+      const message = error instanceof Error ? error.message : 'Failed to create assignment'
+      alert(message)
     }
   }
 
@@ -831,6 +872,7 @@ export default function ProfessorCourseDetail() {
         ? `${newAssignment.due_date}T${newAssignment.due_time}:00`
         : newAssignment.due_date
 
+      const isGroupType = newAssignment.assignment_type === 'group_assignment' || newAssignment.assignment_type === 'group_project'
       const updatePayload: Record<string, unknown> = {
         title: newAssignment.title,
         description: newAssignment.description || null,
@@ -843,6 +885,11 @@ export default function ProfessorCourseDetail() {
         updatePayload.section_id = assignmentSectionId
       } else {
         updatePayload.section_id = null
+      }
+      // Only send group fields when editing a group assignment (requires migration 20250311100000)
+      if (isGroupType) {
+        updatePayload.is_group_assignment = true
+        updatePayload.group_size = Math.max(2, groupSize)
       }
       if (newAssignment.assignment_type === 'quiz') {
         const valid = quizQuestions.filter((q) => q.question.trim() && q.choices.filter((c) => c.trim()).length >= 2)
@@ -905,6 +952,49 @@ export default function ProfessorCourseDetail() {
     } catch (error) {
       console.error('Error deleting assignment:', error)
       alert('Failed to delete assignment')
+    }
+  }
+
+  async function fetchAssignmentGroups(assignmentId: string) {
+    setLoadingGroupsFor(assignmentId)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const res = await fetch(`/api/professor/courses/${courseId}/assignments/${assignmentId}/groups`, { credentials: 'include', headers })
+      if (!res.ok) return
+      const json = await res.json().catch(() => null)
+      const groups = (json?.groups ?? []) as AssignmentGroup[]
+      setAssignmentGroups((prev) => ({ ...prev, [assignmentId]: groups }))
+    } catch (e) {
+      console.error('Error fetching groups:', e)
+    } finally {
+      setLoadingGroupsFor(null)
+    }
+  }
+
+  async function handleCreateGroups(assignment: Assignment) {
+    if (!assignment.is_group_assignment || assignment.group_size == null) return
+    setCreatingGroupsFor(assignment.id)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`
+      const res = await fetch(`/api/professor/courses/${courseId}/assignments/${assignment.id}/create-groups`, {
+        method: 'POST',
+        credentials: 'include',
+        headers,
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err?.error || res.statusText)
+      }
+      await fetchAssignmentGroups(assignment.id)
+    } catch (e) {
+      console.error('Error creating groups:', e)
+      alert(e instanceof Error ? e.message : 'Failed to create groups')
+    } finally {
+      setCreatingGroupsFor(null)
     }
   }
 
@@ -971,6 +1061,9 @@ export default function ProfessorCourseDetail() {
       assignment_type: template.type,
       instructions: ''
     })
+    if (template.type === 'group_assignment' || template.type === 'group_project') {
+      setGroupSize(3)
+    }
     setShowAssignmentForm(true)
   }
 
@@ -987,6 +1080,7 @@ export default function ProfessorCourseDetail() {
       instructions: assignment.instructions || ''
     })
     setAssignmentSectionId(assignment.section_id ?? '')
+    setGroupSize(assignment.group_size != null && assignment.group_size >= 2 ? assignment.group_size : 3)
     const qq = assignment.quiz_questions
     if (Array.isArray(qq) && qq.length > 0) {
       setQuizQuestions(qq.map((q: QuizQuestion) => ({
@@ -2431,6 +2525,7 @@ export default function ProfessorCourseDetail() {
                     setQuizQuestions([])
                     setShowGradesToStudents(false)
                     setAssignmentSectionId('')
+                    setGroupSize(3)
                     setShowAssignmentForm(true)
                   }}
                   className="btn-primary"
@@ -2573,11 +2668,29 @@ export default function ProfessorCourseDetail() {
                           <option value="project">Project</option>
                           <option value="exam">Exam</option>
                           <option value="lab">Lab</option>
+                          <option value="group_assignment">Group Assignment</option>
+                          <option value="group_project">Group Project</option>
                           <option value="essay">Essay</option>
                           <option value="presentation">Presentation</option>
                         </select>
                       </div>
                     </div>
+
+                    {(newAssignment.assignment_type === 'group_assignment' || newAssignment.assignment_type === 'group_project') && (
+                      <div className="form-group" style={{ marginBottom: '0.75rem', maxWidth: 120 }}>
+                        <label style={{ display: 'block', marginBottom: '0.35rem', fontWeight: 500, color: 'var(--text)', fontSize: '0.85rem' }}>
+                          Group size
+                        </label>
+                        <input
+                          type="number"
+                          min={2}
+                          value={groupSize}
+                          onChange={(e) => setGroupSize(Math.max(2, parseInt(e.target.value, 10) || 2))}
+                          className="form-control"
+                        />
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Students per group (randomly assigned)</p>
+                      </div>
+                    )}
 
                     {sections.length > 0 && (
                       <div className="form-group" style={{ marginBottom: '0.75rem', maxWidth: 220 }}>
@@ -2827,7 +2940,10 @@ export default function ProfessorCourseDetail() {
                         const sectionBCount = sections.length >= 2 ? assignmentSubmissions.filter((s) => s.assignment_id === assignment.id && sections[1] && getStudentsInSection(sections[1].id).some((st) => st.id === s.student_id)).length : 0
                         const sectionATotal = sections.length >= 2 ? getStudentsInSection(sections[0]?.id).length : 0
                         const sectionBTotal = sections.length >= 2 && sections[1] ? getStudentsInSection(sections[1].id).length : 0
+                        const colSpan = sections.length >= 2 ? 7 : 6
+                        const groupsList = assignment.is_group_assignment ? assignmentGroups[assignment.id] : undefined
                         return (
+                          <>
                           <tr key={assignment.id}>
                             <td>
                               <div style={{ fontWeight: 500 }}>{assignment.title}</div>
@@ -2891,6 +3007,34 @@ export default function ProfessorCourseDetail() {
                                 >
                                   View submissions
                                 </Link>
+                                {assignment.is_group_assignment && assignment.group_size != null && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCreateGroups(assignment)}
+                                      disabled={creatingGroupsFor === assignment.id || enrolledStudents.length < 2}
+                                      style={{
+                                        padding: '0.25rem 0.75rem',
+                                        background: assignmentGroups[assignment.id]?.length ? '#6b7280' : '#8b5cf6',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: creatingGroupsFor === assignment.id ? 'wait' : 'pointer',
+                                        fontSize: '0.75rem'
+                                      }}
+                                    >
+                                      {creatingGroupsFor === assignment.id ? 'Creating…' : assignmentGroups[assignment.id]?.length ? 'Recreate groups' : 'Create groups'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => fetchAssignmentGroups(assignment.id)}
+                                      disabled={loadingGroupsFor === assignment.id}
+                                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', background: 'transparent', border: '1px solid var(--border)', borderRadius: '4px', cursor: loadingGroupsFor === assignment.id ? 'wait' : 'pointer', color: 'var(--text)' }}
+                                    >
+                                      {loadingGroupsFor === assignment.id ? 'Loading…' : assignmentGroups[assignment.id] ? 'Refresh groups' : 'View groups'}
+                                    </button>
+                                  </>
+                                )}
                                 {!assignment.is_published && (
                                   <button
                                     type="button"
@@ -2943,6 +3087,29 @@ export default function ProfessorCourseDetail() {
                               </div>
                             </td>
                           </tr>
+                          {assignment.is_group_assignment && groupsList && (
+                            <tr>
+                              <td colSpan={colSpan} style={{ paddingTop: 0, verticalAlign: 'top', borderTop: 'none', background: 'var(--surface)', fontSize: '0.8rem' }}>
+                                <div style={{ padding: '0.5rem 0.75rem' }}>
+                                  {groupsList.length > 0 ? (
+                                    <>
+                                      <strong>Groups:</strong>
+                                      {groupsList.map((g) => (
+                                        <div key={g.id} style={{ marginTop: '0.35rem' }}>
+                                          {g.name}: {g.students.map((s) => [s.first_name, s.last_name].filter(Boolean).join(' ') || s.email || s.id).join(', ')}
+                                        </div>
+                                      ))}
+                                    </>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-muted)' }}>
+                                      No groups created yet. Click <strong>Create groups</strong> above to randomly assign students.
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </>
                         )
                       })}
                     </tbody>

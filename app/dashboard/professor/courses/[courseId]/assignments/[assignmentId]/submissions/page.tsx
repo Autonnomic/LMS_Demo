@@ -27,12 +27,18 @@ interface EnrolledStudent {
   registered_at: string
 }
 
+interface SubmissionFile {
+  file_url: string
+  file_name: string
+}
+
 interface Submission {
   id: string
   student_id: string
   submitted_at: string
   file_url: string | null
   file_name: string | null
+  submission_files?: SubmissionFile[] | null
   submission_text: string | null
   status: string
   grade: number | null
@@ -350,14 +356,19 @@ export default function AssignmentSubmissionsPage() {
                     <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: submission.grade !== null ? '#10b981' : 'var(--text-muted)' }}>
                       {submission.grade !== null ? `${submission.grade} / ${assignment.max_points}` : '—'}
                     </span>
-                    {submission.file_url && (
-                      <button
-                        type="button"
-                        onClick={() => setViewingDocument({ url: submission.file_url!, fileName: submission.file_name || 'document' })}
-                        style={{ fontSize: '0.8125rem', color: 'var(--teal-bright)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
-                      >
-                        View submission
-                      </button>
+                    {(submission.submission_files?.length || submission.file_url) && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+                        {(submission.submission_files ?? (submission.file_url ? [{ file_url: submission.file_url, file_name: submission.file_name || 'document' }] : [])).map((f, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setViewingDocument({ url: f.file_url, fileName: f.file_name || 'document' })}
+                            style={{ fontSize: '0.8125rem', color: 'var(--teal-bright)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                          >
+                            {f.file_name}
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
                   <div style={{ flexShrink: 0 }}>
