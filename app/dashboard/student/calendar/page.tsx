@@ -8,168 +8,20 @@ import Sidebar from '../components/Sidebar'
 import Notifications from '../components/Notifications'
 import { ChatProvider } from '../components/ChatContext'
 import UserMenu from '../../components/UserMenu'
+import {
+  getEventsForRange,
+  type Course,
+  type ScheduleRow,
+  type AssignmentRow,
+  type TopicRow,
+  type CalendarEvent,
+} from '@/lib/calendar-events'
+import { buildICS, downloadICS } from '@/lib/icalendar'
 
 type ViewMode = 'month' | 'week'
 
-interface Course {
-  id: string
-  code: string
-  name: string
-}
-
-interface ScheduleRow {
-  id: string
-  course_id: string
-  day_of_week: number
-  start_time: string
-  end_time: string
-  location: string | null
-  course?: { code: string; name: string }
-}
-
-interface AssignmentRow {
-  id: string
-  title: string
-  due_date: string
-  course_id: string
-  course?: { code: string; name: string }
-}
-
-interface TopicRow {
-  id: string
-  title: string
-  scheduled_date: string
-  course_id: string
-  course?: { code: string; name: string }
-}
-
-type CalendarEventType = 'schedule' | 'assignment' | 'topic'
-
-interface CalendarEvent {
-  id: string
-  type: CalendarEventType
-  title: string
-  subtitle?: string
-  date: Date
-  endDate?: Date
-  time?: string
-  link?: string
-  color?: string
-  courseId?: string
-  courseCode?: string
-}
-
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-
-function formatTime(t: string): string {
-  if (!t) return ''
-  const [h, m] = t.split(':')
-  const hour = parseInt(h, 10)
-  if (hour === 0) return `12:${m || '00'} AM`
-  if (hour === 12) return `12:${m || '00'} PM`
-  if (hour < 12) return `${hour}:${(m || '00').padStart(2, '0')} AM`
-  return `${hour - 12}:${(m || '00').padStart(2, '0')} PM`
-}
-
-function getEventsForRange(
-  schedules: ScheduleRow[],
-  assignments: AssignmentRow[],
-  topics: TopicRow[],
-  start: Date,
-  end: Date
-): CalendarEvent[] {
-  const events: CalendarEvent[] = []
-  const courseColors: Record<string, string> = {}
-  const palette = [
-    '#0892A5', // teal
-    '#2563EB', // blue
-    '#10B981', // green
-    '#F97316', // orange
-    '#EC4899', // pink
-    '#8B5CF6', // purple
-    '#F59E0B', // amber
-    '#EF4444', // red
-  ]
-
-  function courseColor(courseId: string): string {
-    if (!courseColors[courseId]) {
-      courseColors[courseId] = palette[Object.keys(courseColors).length % palette.length]
-    }
-    return courseColors[courseId]
-  }
-
-  // Assignments: single-day events (use due_date date, time if present)
-  assignments.forEach((a) => {
-    const d = new Date(a.due_date)
-    if (d >= start && d <= end) {
-      events.push({
-        id: `assignment-${a.id}`,
-        type: 'assignment',
-        title: a.title,
-        subtitle: a.course?.code,
-        date: d,
-        link: `/dashboard/student/assignments/${a.id}`,
-        color: courseColor(a.course_id),
-        courseId: a.course_id,
-        courseCode: a.course?.code,
-      })
-    }
-  })
-
-  // Topics: single-day (all-day)
-  topics.forEach((t) => {
-    const d = new Date(t.scheduled_date + 'T12:00:00')
-    if (d >= start && d <= end) {
-      events.push({
-        id: `topic-${t.id}`,
-        type: 'topic',
-        title: t.title,
-        subtitle: t.course?.code,
-        date: d,
-        link: undefined,
-        color: courseColor(t.course_id),
-        courseId: t.course_id,
-        courseCode: t.course?.code,
-      })
-    }
-  })
-
-  // Schedules: recurring weekly — generate one event per occurrence in range
-  const cursor = new Date(start)
-  cursor.setHours(0, 0, 0, 0)
-  while (cursor <= end) {
-    const dayOfWeek = cursor.getDay()
-    schedules.forEach((s) => {
-      if (s.day_of_week !== dayOfWeek) return
-      const [sh, sm] = (s.start_time || '00:00').split(':')
-      const [eh, em] = (s.end_time || '23:59').split(':')
-      const startDate = new Date(cursor)
-      startDate.setHours(parseInt(sh, 10), parseInt(sm, 10), 0, 0)
-      const endDate = new Date(cursor)
-      endDate.setHours(parseInt(eh, 10), parseInt(em, 10), 0, 0)
-      if (endDate <= start) return
-      if (startDate > end) return
-      events.push({
-        id: `schedule-${s.id}-${cursor.getTime()}`,
-        type: 'schedule',
-        title: `${s.course?.code || 'Class'}`,
-        subtitle: s.location || undefined,
-        date: startDate,
-        endDate,
-        time: `${formatTime(s.start_time)} – ${formatTime(s.end_time)}`,
-        link: `/dashboard/student/courses/${s.course_id}`,
-        color: courseColor(s.course_id),
-        courseId: s.course_id,
-        courseCode: s.course?.code,
-      })
-    })
-    cursor.setDate(cursor.getDate() + 1)
-  }
-
-  events.sort((a, b) => a.date.getTime() - b.date.getTime())
-  return events
-}
 
 function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -330,9 +182,26 @@ export default function CalendarPage() {
       end.setDate(end.getDate() + 6)
       end.setHours(23, 59, 59, 999)
     }
-    const evts = getEventsForRange(schedules, assignments, topics, start, end)
+    const evts = getEventsForRange(schedules, assignments, topics, start, end, 'student')
     return { rangeStart: start, rangeEnd: end, events: evts }
   }, [current, viewMode, schedules, assignments, topics])
+
+  /** Wider range for .ics export (classes + due dates + topics). */
+  const exportEventsForICS = useMemo(() => {
+    let exportStart = new Date()
+    exportStart.setMonth(exportStart.getMonth() - 3)
+    exportStart.setHours(0, 0, 0, 0)
+    let exportEnd = new Date()
+    exportEnd.setMonth(exportEnd.getMonth() + 12)
+    exportEnd.setHours(23, 59, 59, 999)
+    return getEventsForRange(schedules, assignments, topics, exportStart, exportEnd, 'student')
+  }, [schedules, assignments, topics])
+
+  function handleExportICS() {
+    const ics = buildICS(exportEventsForICS, 'Autonnomic LMS — my courses')
+    const filename = `autonnomic-calendar-${new Date().toISOString().slice(0, 10)}.ics`
+    downloadICS(ics, filename)
+  }
 
   const eventsByDay = useMemo(() => {
     const map: Record<string, CalendarEvent[]> = {}
@@ -439,7 +308,17 @@ export default function CalendarPage() {
                   ? `${MONTH_NAMES[current.getMonth()]} ${current.getFullYear()}`
                   : `${rangeStart.toLocaleDateString()} – ${rangeEnd.toLocaleDateString()}`}
               </span>
-              <div style={{ display: 'flex', gap: '0.25rem', marginLeft: 'auto' }}>
+              <div style={{ display: 'flex', gap: '0.25rem', marginLeft: 'auto', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '0.4rem 0.75rem' }}
+                  onClick={handleExportICS}
+                  disabled={courses.length === 0}
+                  title="Download a calendar file you can import into Google Calendar, Apple Calendar, or Outlook"
+                >
+                  Export .ics
+                </button>
                 <button
                   type="button"
                   className={viewMode === 'month' ? 'btn-primary' : 'btn-secondary'}
@@ -646,6 +525,8 @@ export default function CalendarPage() {
 
             <div style={{ marginTop: '1.5rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
               <strong>Legend:</strong> Class schedules (recurring), assignment due dates, and course topic dates from your enrolled courses.
+              {' '}
+              Use <strong>Export .ics</strong> to download a file you can import into Google Calendar, Apple Calendar, or Outlook (about 3 months past through 12 months ahead). Re-export when your schedule changes.
             </div>
           </div>
         </main>
