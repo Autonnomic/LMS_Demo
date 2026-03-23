@@ -33,7 +33,7 @@ export async function PATCH(
     if (!courseId || !sectionId) return NextResponse.json({ error: 'Missing courseId or sectionId' }, { status: 400 })
     const { admin } = await assertProfessorCourseAccess(courseId, request)
     const body = await request.json().catch(() => ({}))
-    const updates: { name?: string; description?: string; sort_order?: number } = {}
+    const updates: { name?: string; description?: string | null; sort_order?: number } = {}
     if (typeof body.name === 'string' && body.name.trim() !== '') updates.name = body.name.trim()
     if (body.description !== undefined) updates.description = body.description === null || body.description === '' ? null : String(body.description).trim()
     if (typeof body.sort_order === 'number') updates.sort_order = body.sort_order

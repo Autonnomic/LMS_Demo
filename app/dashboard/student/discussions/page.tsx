@@ -41,6 +41,7 @@ export default function StudentDiscussionsPage() {
   const [loading, setLoading] = useState(true)
   const [threads, setThreads] = useState<Thread[]>([])
   const [courses, setCourses] = useState<SidebarCourse[]>([])
+  const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState('')
   const [userInitials, setUserInitials] = useState('')
   const [newTitle, setNewTitle] = useState('')
@@ -61,6 +62,8 @@ export default function StudentDiscussionsPage() {
         router.replace('/')
         return
       }
+
+      setUserId(user.id)
 
       const { data: profile } = await supabase
         .from('user_profiles')
@@ -84,10 +87,9 @@ export default function StudentDiscussionsPage() {
         .select('course:courses(id, code, name)')
         .eq('student_id', user.id)
         .eq('status', 'enrolled')
-      const courseList =
-        (regs || [])
-          .map((r: any) => r.course as SidebarCourse | null)
-          .filter(Boolean) ?? []
+      const courseList = (regs || [])
+        .map((r: any) => r.course as SidebarCourse | null)
+        .filter((c): c is SidebarCourse => Boolean(c))
       setCourses(courseList)
 
       await fetchThreads()
@@ -211,7 +213,7 @@ export default function StudentDiscussionsPage() {
           <div className="canvas-topbar">
             <span className="canvas-topbar-title">Discussions</span>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <Notifications />
+              {userId && <Notifications userId={userId} />}
               <UserMenu
                 userName={userName}
                 userInitials={userInitials}

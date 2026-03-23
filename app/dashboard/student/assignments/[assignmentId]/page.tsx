@@ -343,7 +343,6 @@ export default function AssignmentDetailPage() {
 
       setSuccess(canUpdateOnce ? 'Submission updated successfully!' : 'Assignment submitted successfully!')
       await fetchAssignmentData()
-      setSelectedFiles([])
       setFileSlots([[]])
     } catch (error: any) {
       console.error('Error submitting assignment:', error)

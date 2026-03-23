@@ -79,7 +79,7 @@ export async function GET(
       return NextResponse.json({ enrolled: [] })
     }
 
-    const studentIds = [...new Set(regs.map((r) => r.student_id))]
+    const studentIds = Array.from(new Set(regs.map((r) => r.student_id)))
     const { data: profiles } = await admin
       .from('user_profiles')
       .select('id, first_name, last_name, email, roll_number')

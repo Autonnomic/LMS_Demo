@@ -56,13 +56,22 @@ export async function POST(request: Request) {
 
     let notificationsCreated = 0
 
-    async function maybeCreateDeadlineNotification(
+    type AssignmentRow = {
+      id: string
+      title: string
+      due_date: string
+      course_id: string
+      /** Supabase may infer joined relations as an object or array */
+      courses?: { code: string; name: string } | { code: string; name: string }[] | null
+    }
+
+    const maybeCreateDeadlineNotification = async (
       studentId: string,
-      assignment: { id: string; title: string; due_date: string; course_id: string; courses?: { code: string; name: string } | null },
+      assignment: AssignmentRow,
       type: 'deadline_7d' | 'deadline_48h' | 'deadline_24h',
       title: string,
       message: string
-    ) {
+    ) => {
       const { data: submission } = await adminClient
         .from('assignment_submissions')
         .select('id')
@@ -115,7 +124,7 @@ export async function POST(request: Request) {
 
       if (in7dAssignments) {
         for (const a of in7dAssignments) {
-          const course = a.courses as { code: string; name: string } | null
+          const course = a.courses as unknown as { code: string; name: string } | null
           await maybeCreateDeadlineNotification(
             student.id,
             a,
@@ -138,7 +147,7 @@ export async function POST(request: Request) {
         for (const a of in48hAssignments) {
           const dueDate = new Date(a.due_date)
           const hoursUntilDue = Math.round((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60))
-          const course = a.courses as { code: string; name: string } | null
+          const course = a.courses as unknown as { code: string; name: string } | null
           await maybeCreateDeadlineNotification(
             student.id,
             a,
@@ -161,7 +170,7 @@ export async function POST(request: Request) {
         for (const a of in24hAssignments) {
           const dueDate = new Date(a.due_date)
           const hoursUntilDue = Math.round((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60))
-          const course = a.courses as { code: string; name: string } | null
+          const course = a.courses as unknown as { code: string; name: string } | null
           await maybeCreateDeadlineNotification(
             student.id,
             a,
@@ -172,8 +181,7 @@ export async function POST(request: Request) {
         }
       }
 
-      // Get upcoming classes (next 2 hours)
-      const now = new Date()
+      // Get upcoming classes (next 2 hours) — use same `now` as deadline windows above
       const twoHoursLater = new Date(now.getTime() + 2 * 60 * 60 * 1000)
       const currentDay = now.getDay()
 
@@ -208,7 +216,7 @@ export async function POST(request: Request) {
 
             if (!existing) {
               const minutesUntilClass = Math.round((classTime.getTime() - now.getTime()) / (1000 * 60))
-              const course = schedule.courses as { code: string; name: string } | null
+              const course = schedule.courses as unknown as { code: string; name: string } | null
 
               await adminClient
                 .from('notifications')

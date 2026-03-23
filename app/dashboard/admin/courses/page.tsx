@@ -357,9 +357,13 @@ export default function AdminCoursesPage() {
                             const eligibleIds = professorEligibilityByCourse[course.id] ?? []
                             const eligibleProfs = professors.filter((prof) => eligibleIds.includes(prof.id))
                             const currentProfId = course.professor_id
+                            const currentProf =
+                              currentProfId != null && currentProfId !== ''
+                                ? professors.find((p) => p.id === currentProfId)
+                                : undefined
                             const options =
-                              currentProfId && !eligibleProfs.some((p) => p.id === currentProfId)
-                                ? [...eligibleProfs, professors.find((p) => p.id === currentProfId)].filter(Boolean)
+                              currentProf && !eligibleProfs.some((p) => p.id === currentProf.id)
+                                ? [...eligibleProfs, currentProf]
                                 : eligibleProfs
                             return options.map((prof) => (
                               <option key={prof.id} value={prof.id}>
