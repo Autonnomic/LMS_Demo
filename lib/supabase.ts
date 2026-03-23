@@ -1,6 +1,33 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+/**
+ * Browser/client singleton. Lazy-init so importing this module does not call
+ * `createClient` during Next.js prerender (where env may be unavailable or not
+ * needed yet). Real usage happens in useEffect / event handlers on the client.
+ */
+let _client: SupabaseClient | undefined
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export function getSupabaseBrowserClient(): SupabaseClient {
+  if (_client) return _client
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !key) {
+    throw new Error(
+      'Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. Add them in Vercel → Project → Settings → Environment Variables (Production and Preview).'
+    )
+  }
+  _client = createClient(url, key)
+  return _client
+}
+
+/** Same as `getSupabaseBrowserClient()` but keeps existing `import { supabase }` usage. */
+export const supabase = new Proxy({} as SupabaseClient, {
+  get(_target, prop, receiver) {
+    const client = getSupabaseBrowserClient()
+    const value = Reflect.get(client as object, prop, receiver)
+    if (typeof value === 'function') {
+      return (value as (...args: unknown[]) => unknown).bind(client)
+    }
+    return value
+  },
+})

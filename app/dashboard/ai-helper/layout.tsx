@@ -2,7 +2,6 @@
 
 import { useEffect, useState, ReactNode } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import Sidebar from '../student/components/Sidebar'
 import ProfessorSidebar from '../components/ProfessorSidebar'
