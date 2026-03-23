@@ -29,12 +29,14 @@ export async function GET(request: Request) {
       .in('id', groupIds)
     if (gErr || !groups?.length) return NextResponse.json({ groups: groups ?? [] })
 
-    const assignmentIds = [...new Set(groups.map((g: { assignment_id: string }) => g.assignment_id))]
+    const assignmentIds = Array.from(new Set(groups.map((g: { assignment_id: string }) => g.assignment_id)))
     const { data: assignments } = await admin
       .from('assignments')
       .select('id, title, course_id')
       .in('id', assignmentIds)
-    const courseIds = [...new Set((assignments ?? []).map((a: { course_id: string }) => a.course_id))]
+    const courseIds = Array.from(
+      new Set((assignments ?? []).map((a: { course_id: string }) => a.course_id))
+    )
     const { data: courses } = await admin.from('courses').select('id, name, code').in('id', courseIds)
 
     const courseMap = (courses ?? []).reduce((acc: Record<string, { name: string; code: string }>, c: { id: string; name: string; code: string }) => {

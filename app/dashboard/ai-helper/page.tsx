@@ -1,6 +1,6 @@
 'use client'
 
-import { useAiHelperUser } from './layout'
+import { useAiHelperUser } from './AiHelperUserContext'
 import AiHelperChat from '../student/components/AiHelperChat'
 
 export default function AiHelperPage() {

@@ -59,7 +59,9 @@ export async function GET(
       return acc
     }, {})
 
-    const studentIds = [...new Set((members ?? []).map((m: { student_id: string }) => m.student_id))]
+    const studentIds = Array.from(
+      new Set((members ?? []).map((m: { student_id: string }) => m.student_id))
+    )
     const { data: profiles } = studentIds.length
       ? await admin.from('user_profiles').select('id, first_name, last_name, email').in('id', studentIds)
       : { data: [] }

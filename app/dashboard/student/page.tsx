@@ -157,10 +157,18 @@ export default function StudentDashboard() {
         .eq('student_id', user.id)
       if (gradesData?.length) {
         const courseMap = new Map<string, { total: number; max: number; code: string; name: string }>()
-        for (const g of gradesData as { grade: number; max_grade: number; course: { id: string; code: string; name: string } | null }[]) {
-          if (!g.course) continue
-          const id = g.course.id
-          if (!courseMap.has(id)) courseMap.set(id, { total: 0, max: 0, code: g.course.code, name: g.course.name })
+        type CourseInfo = { id: string; code: string; name: string }
+        for (const g of gradesData as unknown as {
+          grade: number
+          max_grade: number
+          course: CourseInfo | CourseInfo[] | null
+        }[]) {
+          const raw = g.course
+          if (!raw) continue
+          const course = Array.isArray(raw) ? raw[0] : raw
+          if (!course) continue
+          const id = course.id
+          if (!courseMap.has(id)) courseMap.set(id, { total: 0, max: 0, code: course.code, name: course.name })
           const row = courseMap.get(id)!
           row.total += Number(g.grade)
           row.max += Number(g.max_grade || 100)

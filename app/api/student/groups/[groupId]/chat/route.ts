@@ -33,7 +33,9 @@ export async function GET(
       .order('created_at', { ascending: true })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    const senderIds = [...new Set((messages ?? []).map((m: { sender_id: string }) => m.sender_id))]
+    const senderIds = Array.from(
+      new Set((messages ?? []).map((m: { sender_id: string }) => m.sender_id))
+    )
     const { data: profiles } = senderIds.length
       ? await admin.from('user_profiles').select('id, first_name, last_name').in('id', senderIds)
       : { data: [] }

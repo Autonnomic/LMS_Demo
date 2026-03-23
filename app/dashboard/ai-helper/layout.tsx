@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, ReactNode, createContext, useContext } from 'react'
+import { useEffect, useState, ReactNode } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
@@ -11,24 +11,12 @@ import Notifications from '../student/components/Notifications'
 import Chat from '../student/components/Chat'
 import { ChatProvider } from '../student/components/ChatContext'
 import UserMenu from '../components/UserMenu'
+import { AiHelperUserContext, type AiHelperUser } from './AiHelperUserContext'
 
 interface Course {
   id: string
   code: string
   name: string
-}
-
-interface AiHelperUser {
-  userId: string
-  userName: string
-  userInitials: string
-  userRole: 'student' | 'professor'
-}
-
-const AiHelperUserContext = createContext<AiHelperUser | null>(null)
-
-export function useAiHelperUser() {
-  return useContext(AiHelperUserContext)
 }
 
 export default function AiHelperLayout({ children }: { children: ReactNode }) {
