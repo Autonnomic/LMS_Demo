@@ -307,15 +307,15 @@ export default function AssignmentsPage() {
 
           {/* Assignments List - single line per assignment */}
           {filteredAssignments.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', background: 'white' }}>
+            <div className="assignments-list" style={{ display: 'flex', flexDirection: 'column', gap: 0, border: '1px solid #e5e7eb', borderRadius: '8px', overflow: 'hidden', background: 'white' }}>
               {/* Header row (desktop) */}
-              <div style={{ display: 'flex', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--surface)', borderBottom: '1px solid #e5e7eb', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                <div style={{ flex: '1 1 20%', minWidth: 0 }}>Name</div>
-                <div style={{ flex: '1 1 22%', minWidth: 0 }}>Course</div>
-                <div style={{ flex: '0 0 90px' }}>Type</div>
-                <div style={{ flex: '0 0 160px' }}>Submitted</div>
-                <div style={{ flex: '0 0 100px' }}>Grade</div>
-                <div style={{ flex: '0 0 32px' }} />
+              <div className="assignments-list-header" style={{ display: 'flex', alignItems: 'center', padding: '0.75rem 1rem', background: 'var(--surface)', borderBottom: '1px solid #e5e7eb', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                <div className="assignment-cell assignment-cell-name" style={{ flex: '1 1 20%', minWidth: 0 }}>Name</div>
+                <div className="assignment-cell assignment-cell-course" style={{ flex: '1 1 22%', minWidth: 0 }}>Course</div>
+                <div className="assignment-cell assignment-cell-type" style={{ flex: '0 0 90px' }}>Type</div>
+                <div className="assignment-cell assignment-cell-submitted" style={{ flex: '0 0 160px' }}>Submitted</div>
+                <div className="assignment-cell assignment-cell-grade" style={{ flex: '0 0 100px' }}>Grade</div>
+                <div className="assignment-cell assignment-cell-chevron" style={{ flex: '0 0 32px' }} />
               </div>
               {filteredAssignments.map(assignment => {
                 const status = getStatus(assignment)
@@ -335,6 +335,7 @@ export default function AssignmentsPage() {
                   <Link
                     key={assignment.id}
                     href={`/dashboard/student/assignments/${assignment.id}`}
+                    className="assignment-row"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -348,23 +349,23 @@ export default function AssignmentsPage() {
                     onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-hover)' }}
                     onMouseLeave={(e) => { e.currentTarget.style.background = 'white' }}
                   >
-                    <div style={{ flex: '1 1 20%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div className="assignment-cell assignment-cell-name" style={{ flex: '1 1 20%', minWidth: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span style={{ fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{assignment.title}</span>
                       <span style={{ flexShrink: 0, padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 500, background: getStatusColor(status) + '22', color: getStatusColor(status) }}>{getStatusLabel(status)}</span>
                     </div>
-                    <div style={{ flex: '1 1 22%', minWidth: 0, fontSize: '0.875rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div className="assignment-cell assignment-cell-course" style={{ flex: '1 1 22%', minWidth: 0, fontSize: '0.875rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {assignment.course.code} – {assignment.course.name}
                     </div>
-                    <div style={{ flex: '0 0 90px', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                    <div className="assignment-cell assignment-cell-type" style={{ flex: '0 0 90px', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
                       {assignment.assignment_type || '—'}
                     </div>
-                    <div style={{ flex: '0 0 160px', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                    <div className="assignment-cell assignment-cell-submitted" style={{ flex: '0 0 160px', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
                       {dateTimeStr}
                     </div>
-                    <div style={{ flex: '0 0 100px', fontSize: '0.875rem', fontWeight: showGrade && assignment.submission?.grade != null ? 600 : 400, color: showGrade && assignment.submission?.grade != null ? getStatusColor('graded') : 'var(--text-muted)' }}>
+                    <div className="assignment-cell assignment-cell-grade" style={{ flex: '0 0 100px', fontSize: '0.875rem', fontWeight: showGrade && assignment.submission?.grade != null ? 600 : 400, color: showGrade && assignment.submission?.grade != null ? getStatusColor('graded') : 'var(--text-muted)' }}>
                       {gradeStr}
                     </div>
-                    <div style={{ flex: '0 0 32px', display: 'flex', justifyContent: 'center' }}>
+                    <div className="assignment-cell assignment-cell-chevron" style={{ flex: '0 0 32px', display: 'flex', justifyContent: 'center' }}>
                       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="18" height="18" style={{ color: 'var(--text-muted)' }}>
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>

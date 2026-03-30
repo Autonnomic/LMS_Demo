@@ -517,8 +517,9 @@ function CourseDetailPageContent() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+          <div className="course-tabs-strip" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
             <button
+              className="course-tab-btn"
               type="button"
               onClick={() => setActiveCourseTab('overview')}
               style={{
@@ -535,6 +536,7 @@ function CourseDetailPageContent() {
               Overview
             </button>
             <button
+              className="course-tab-btn"
               type="button"
               onClick={() => setActiveCourseTab('assignments')}
               style={{
@@ -551,6 +553,7 @@ function CourseDetailPageContent() {
               Assignments
             </button>
             <button
+              className="course-tab-btn"
               type="button"
               onClick={() => setActiveCourseTab('materials')}
               style={{
@@ -567,6 +570,7 @@ function CourseDetailPageContent() {
               Materials
             </button>
             <button
+              className="course-tab-btn"
               type="button"
               onClick={() => setActiveCourseTab('announcements')}
               style={{
@@ -583,6 +587,7 @@ function CourseDetailPageContent() {
               Announcements
             </button>
             <button
+              className="course-tab-btn"
               type="button"
               onClick={() => setActiveCourseTab('grades')}
               style={{

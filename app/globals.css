@@ -1685,6 +1685,86 @@ a:hover {
     display: none;
   }
 
+  .assignments-list-header {
+    display: none !important;
+  }
+
+  .assignment-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 24px;
+    grid-template-areas:
+      "name chevron"
+      "course chevron"
+      "type chevron"
+      "submitted chevron"
+      "grade chevron";
+    align-items: start !important;
+    column-gap: 0.5rem;
+    row-gap: 0.2rem;
+    padding: 0.75rem !important;
+  }
+
+  .assignment-row .assignment-cell {
+    min-width: 0 !important;
+    width: auto !important;
+    flex: none !important;
+  }
+
+  .assignment-row .assignment-cell-name {
+    grid-area: name;
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+
+  .assignment-row .assignment-cell-name span:first-child,
+  .assignment-row .assignment-cell-course {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    word-break: break-word;
+  }
+
+  .assignment-row .assignment-cell-course {
+    grid-area: course;
+  }
+
+  .assignment-row .assignment-cell-type {
+    grid-area: type;
+  }
+
+  .assignment-row .assignment-cell-submitted {
+    grid-area: submitted;
+  }
+
+  .assignment-row .assignment-cell-grade {
+    grid-area: grade;
+  }
+
+  .assignment-row .assignment-cell-chevron {
+    grid-area: chevron;
+    align-self: center;
+    justify-self: center;
+  }
+
+  .course-tabs-strip {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+
+  .course-tabs-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .course-tab-btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    touch-action: pan-x;
+  }
+
   /* Inbox loading skeleton: single-column list on mobile (no right panel) */
   .inbox-loading-skeleton {
     flex-direction: column;
