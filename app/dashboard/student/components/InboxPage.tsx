@@ -42,6 +42,7 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [conversationSearchQuery, setConversationSearchQuery] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesScrollRef = useRef<HTMLDivElement>(null)
   const messageChannelRef = useRef<any>(null)
 
   useEffect(() => {
@@ -288,7 +289,12 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
   }, [searchQuery])
 
   function scrollToBottom() {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const wrap = messagesScrollRef.current
+    if (wrap) {
+      wrap.scrollTo({ top: wrap.scrollHeight, behavior: 'smooth' })
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
   }
 
   async function deleteConversation(conversationId: string, e: React.MouseEvent) {
@@ -324,7 +330,7 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
   }, [conversations, conversationSearchQuery])
 
   const headerStyle = {
-    padding: '12px 16px',
+    padding: 'calc(12px + env(safe-area-inset-top, 0px)) 16px 12px 16px',
     background: 'var(--navy-dark)',
     color: 'white',
     display: 'flex',
@@ -345,7 +351,7 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
   const bubbleOther = { maxWidth: '75%', padding: '8px 12px 6px 12px', borderRadius: '18px 18px 18px 4px', background: 'var(--surface-hover)', color: 'var(--text)', border: '1px solid var(--border)' }
 
   const leftPanel = (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, minHeight: 0 }}>
       <div style={headerStyle}>
         <span className="inbox-hide-on-desktop">
           <Link href={backHref} style={{ color: 'white', display: 'flex', padding: '4px' }} aria-label="Back">
@@ -494,16 +500,16 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
       </div>
     </div>
   ) : (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, flex: 1 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minWidth: 0, minHeight: 0, flex: 1 }}>
       <div style={{ ...headerStyle, background: 'var(--surface)', color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>
         <button type="button" onClick={() => { setSelectedConversation(null); setMobileShowChat(false) }} className="inbox-mobile-back" style={{ display: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
           <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text)' }}>{currentConversation?.other_user?.first_name} {currentConversation?.other_user?.last_name}</div>
+          <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentConversation?.other_user?.first_name} {currentConversation?.other_user?.last_name}</div>
         </div>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--bg)' }}>
+      <div ref={messagesScrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px', background: 'var(--bg)' }}>
         {messages.map((m) => {
           const isOwn = m.sender_id === userId
           return (
@@ -528,10 +534,11 @@ export default function InboxPage({ userId, userRole, inboxHref, backHref, backL
   )
 
   return (
-    <div className="inbox-page" style={{ display: 'flex', height: '100%', minHeight: 'calc(100vh - 0px)', background: 'var(--surface)' }}>
+    <div className="inbox-page" style={{ display: 'flex', flex: 1, minHeight: 0, width: '100%', background: 'var(--surface)', overflow: 'hidden' }}>
       <style>{`
-        .inbox-page .inbox-left { width: 360px; min-width: 280px; border-right: 1px solid var(--border); flex-shrink: 0; flex-direction: column; height: 100%; }
-        .inbox-page .inbox-right { flex: 1; min-width: 0; flex-direction: column; height: 100%; }
+        .inbox-page { min-height: 0; }
+        .inbox-page .inbox-left { width: 360px; min-width: 280px; border-right: 1px solid var(--border); flex-shrink: 0; flex-direction: column; height: 100%; min-height: 0; }
+        .inbox-page .inbox-right { flex: 1; min-width: 0; min-height: 0; flex-direction: column; height: 100%; }
         .inbox-page .inbox-conv-delete-overlay { opacity: 0; pointer-events: none; }
         .inbox-page .inbox-conv-delete-btn { opacity: 0; pointer-events: none; }
         .inbox-page .inbox-conv-row:hover .inbox-conv-delete-overlay { opacity: 1; }
