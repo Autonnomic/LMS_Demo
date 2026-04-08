@@ -46,8 +46,8 @@ export default function StudentInboxPage() {
       <ChatProvider>
         <div className="canvas-layout">
           <Sidebar courses={[]} />
-          <main className="canvas-main-content" style={{ padding: 0, overflow: 'hidden', height: '100vh' }}>
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          <main className="canvas-main-content" style={{ padding: 0, overflow: 'hidden', height: '100vh', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               <div style={{ padding: '12px 16px', background: 'var(--navy-dark)', color: 'white', display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div className="skeleton skeleton-avatar" />
                 <span className="skeleton skeleton-text lg" style={{ width: '80px' }} />
@@ -86,7 +86,7 @@ export default function StudentInboxPage() {
     <ChatProvider>
       <div className="canvas-layout">
         <Sidebar courses={courses.map((c) => ({ id: c.id, code: c.code, name: c.name }))} />
-        <main className="canvas-main-content" style={{ padding: 0, overflow: 'hidden', height: '100vh' }}>
+        <main className="canvas-main-content" style={{ padding: 0, overflow: 'hidden', height: '100vh', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           <InboxPage
             userId={userId}
             userRole={userRole}

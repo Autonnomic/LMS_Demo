@@ -78,7 +78,7 @@ export default function ProfessorInboxPage() {
   if (!userId) return null
 
   return (
-    <main className="canvas-main-content" style={{ padding: 0, overflow: 'hidden', height: '100vh' }}>
+    <main className="canvas-main-content" style={{ padding: 0, overflow: 'hidden', height: '100vh', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <InboxPage
         userId={userId}
         userRole={userRole}
