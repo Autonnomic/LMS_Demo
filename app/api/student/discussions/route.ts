@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isMissingTableError } from '@/lib/supabase/db-errors'
 import { getAuthUser, createServiceRoleClient } from '@/lib/supabase/server'
 
 // Expected tables (create in Supabase):
@@ -70,7 +71,9 @@ export async function GET(request: Request) {
       .limit(50)
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 })
+      if (isMissingTableError(error)) return NextResponse.json({ threads: [] })
+      console.error('student/discussions GET query:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     const threads = (data ?? []).map((t: any) => ({
@@ -157,6 +160,12 @@ export async function POST(request: Request) {
       .single()
 
     if (error) {
+      if (isMissingTableError(error)) {
+        return NextResponse.json(
+          { error: 'Discussions are not available yet. Please try again later.' },
+          { status: 503 }
+        )
+      }
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
 

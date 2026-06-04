@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { getSupabasePublicKey } from '@/lib/supabase'
 
 /**
  * Check if an email is allowed to sign up (must be in allowed_signup_emails).
  * No auth required — used by the signup page before calling signUp.
+ * Uses the publishable/anon key (read-only); does not require service role.
  */
 export async function POST(request: Request) {
   try {
@@ -13,21 +15,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ allowed: false, error: 'Valid email is required' }, { status: 400 })
     }
 
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    if (!serviceRoleKey) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    if (!url) {
       return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
     }
 
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    )
+    const db = createClient(url, getSupabasePublicKey(), {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
 
-    const { data, error } = await adminClient
+    const { data, error } = await db
       .from('allowed_signup_emails')
       .select('id')
-      .ilike('email', email)
+      .eq('email', email)
       .maybeSingle()
 
     if (error) {

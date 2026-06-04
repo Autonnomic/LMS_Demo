@@ -26,8 +26,17 @@ export default function SignupPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email.trim().toLowerCase() }),
     })
-    const { allowed } = await res.json().catch(() => ({ allowed: false }))
-    if (!allowed) {
+    const check = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setLoading(false)
+      setError(
+        typeof check.error === 'string'
+          ? check.error
+          : 'Could not verify your email. Please try again in a moment.'
+      )
+      return
+    }
+    if (!check.allowed) {
       setLoading(false)
       setError('This email is not authorized to sign up. Contact your administrator to get access.')
       return
