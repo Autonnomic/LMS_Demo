@@ -1,6 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { getAuthUser } from '@/lib/supabase/server'
+import { createServiceRoleClient, getAuthUser } from '@/lib/supabase/server'
 
 /**
  * Self-assign student role for new signups. Called when a user has no role
@@ -13,21 +12,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    if (!serviceRoleKey) {
-      return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-    }
+    const adminClient = createServiceRoleClient()
 
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      serviceRoleKey
-    )
-
-    const { data: existing } = await adminClient
+    const { data: existing, error: existingError } = await adminClient
       .from('user_profiles')
       .select('id, role')
       .eq('id', user.id)
       .maybeSingle()
+
+    if (existingError) {
+      console.error('self-assign-student profile lookup:', existingError)
+      return NextResponse.json({ error: existingError.message }, { status: 500 })
+    }
 
     const meta = user.user_metadata ?? {}
     let firstName = (meta.first_name as string)?.trim() || null
@@ -48,7 +44,7 @@ export async function POST(request: Request) {
         const { data: allowedRow } = await adminClient
           .from('allowed_signup_emails')
           .select('college_id')
-          .ilike('email', emailLower)
+          .eq('email', emailLower)
           .not('college_id', 'is', null)
           .limit(1)
           .maybeSingle()

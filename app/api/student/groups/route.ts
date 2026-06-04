@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isMissingTableError } from '@/lib/supabase/db-errors'
 import { getAuthUser, createServiceRoleClient } from '@/lib/supabase/server'
 
 /**
@@ -19,7 +20,10 @@ export async function GET(request: Request) {
       .from('assignment_group_members')
       .select('assignment_group_id')
       .eq('student_id', user.id)
-    if (mErr) return NextResponse.json({ error: mErr.message }, { status: 500 })
+    if (mErr) {
+      if (isMissingTableError(mErr)) return NextResponse.json({ groups: [] })
+      return NextResponse.json({ error: mErr.message }, { status: 500 })
+    }
     if (!memberships?.length) return NextResponse.json({ groups: [] })
 
     const groupIds = memberships.map((m: { assignment_group_id: string }) => m.assignment_group_id)
@@ -27,17 +31,32 @@ export async function GET(request: Request) {
       .from('assignment_groups')
       .select('id, name, assignment_id')
       .in('id', groupIds)
-    if (gErr || !groups?.length) return NextResponse.json({ groups: groups ?? [] })
+    if (gErr) {
+      if (isMissingTableError(gErr)) return NextResponse.json({ groups: [] })
+      return NextResponse.json({ error: gErr.message }, { status: 500 })
+    }
+    if (!groups?.length) return NextResponse.json({ groups: [] })
 
     const assignmentIds = Array.from(new Set(groups.map((g: { assignment_id: string }) => g.assignment_id)))
-    const { data: assignments } = await admin
+    const { data: assignments, error: aErr } = await admin
       .from('assignments')
       .select('id, title, course_id')
       .in('id', assignmentIds)
+    if (aErr) {
+      if (isMissingTableError(aErr)) return NextResponse.json({ groups: [] })
+      return NextResponse.json({ error: aErr.message }, { status: 500 })
+    }
     const courseIds = Array.from(
       new Set((assignments ?? []).map((a: { course_id: string }) => a.course_id))
     )
-    const { data: courses } = await admin.from('courses').select('id, name, code').in('id', courseIds)
+    const { data: courses, error: cErr } =
+      courseIds.length > 0
+        ? await admin.from('courses').select('id, name, code').in('id', courseIds)
+        : { data: [], error: null }
+    if (cErr) {
+      if (isMissingTableError(cErr)) return NextResponse.json({ groups: [] })
+      return NextResponse.json({ error: cErr.message }, { status: 500 })
+    }
 
     const courseMap = (courses ?? []).reduce((acc: Record<string, { name: string; code: string }>, c: { id: string; name: string; code: string }) => {
       acc[c.id] = { name: c.name, code: c.code }

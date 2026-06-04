@@ -79,9 +79,12 @@ export default function StudentDashboard() {
         .eq('id', user.id)
         .single()
 
-      // Verify user is a student, redirect if not
-      if (!profile || profile.role !== 'student') {
-        router.push('/dashboard')
+      if (!profile?.role) {
+        router.replace('/pending')
+        return
+      }
+      if (profile.role !== 'student') {
+        router.replace(`/dashboard/${profile.role}`)
         return
       }
 

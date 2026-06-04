@@ -2,13 +2,14 @@ import { createServerClient } from '@supabase/ssr'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import type { User } from '@supabase/supabase-js'
+import { getSupabasePublicKey } from '@/lib/supabase'
 
 /** Server client with anon key; uses cookies for auth when available. */
 export async function createClient() {
   const cookieStore = await cookies()
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    getSupabasePublicKey(),
     {
       cookies: {
         getAll() {
@@ -40,10 +41,20 @@ export async function getAuthUser(request?: Request | null): Promise<User | null
   return user ?? null
 }
 
-/** Server-only client with service role; bypasses RLS. Use only for trusted server-side reads (e.g. checking user role). */
+/**
+ * Server-side DB client for API routes.
+ * Uses service role when set; otherwise publishable/anon (works when RLS is off).
+ * When the project uses new `sb_publishable_*` keys, a stale/invalid JWT service_role
+ * in .env.local is skipped so routes do not fail with "Invalid API key".
+ */
 export function createServiceRoleClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!key) throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for createServiceRoleClient')
+  const publicKey = getSupabasePublicKey()
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  const useServiceRole =
+    !!serviceKey &&
+    !publicKey.startsWith('sb_publishable') &&
+    serviceKey.startsWith('eyJ')
+  const key = useServiceRole ? serviceKey! : publicKey
   return createSupabaseClient(url, key, { auth: { persistSession: false } })
 }

@@ -19,7 +19,10 @@ export default function LoginPage() {
     let cancelled = false
     let authUnsubscribe: (() => void) | null = null
     async function redirectIfSession(session: { access_token: string; refresh_token?: string } | null) {
-      if (!session?.access_token) return
+      if (!session?.access_token) {
+        setCheckingSession(false)
+        return
+      }
       const registerRes = await fetch('/api/auth/register-session', {
         method: 'POST',
         headers: {
@@ -39,19 +42,26 @@ export default function LoginPage() {
       router.replace('/dashboard')
     }
     async function checkExistingSession() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (cancelled) return
-      if (session?.user) {
-        await redirectIfSession(session)
-        return
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (cancelled) return
+        if (session?.user) {
+          await redirectIfSession(session)
+          return
+        }
+        setCheckingSession(false)
+        // Session may appear after Supabase processes hash (e.g. email confirm link)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+          if (cancelled || event !== 'SIGNED_IN' || !session) return
+          redirectIfSession(session)
+        })
+        authUnsubscribe = () => subscription.unsubscribe()
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Could not connect. Check your configuration.')
+          setCheckingSession(false)
+        }
       }
-      setCheckingSession(false)
-      // Session may appear after Supabase processes hash (e.g. email confirm link)
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (cancelled || event !== 'SIGNED_IN' || !session) return
-        redirectIfSession(session)
-      })
-      authUnsubscribe = () => subscription.unsubscribe()
     }
     checkExistingSession()
     return () => {

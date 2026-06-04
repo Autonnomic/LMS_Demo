@@ -1,5 +1,18 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
+/** Supabase public (anon / publishable) key from env. */
+export function getSupabasePublicKey(): string {
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+  if (!key) {
+    throw new Error(
+      'Missing NEXT_PUBLIC_SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY. Add one in .env.local or Vercel environment variables.'
+    )
+  }
+  return key
+}
+
 /**
  * Browser/client singleton. Lazy-init so importing this module does not call
  * `createClient` during Next.js prerender (where env may be unavailable or not
@@ -10,7 +23,7 @@ let _client: SupabaseClient | undefined
 export function getSupabaseBrowserClient(): SupabaseClient {
   if (_client) return _client
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const key = url ? getSupabasePublicKey() : undefined
   if (!url || !key) {
     throw new Error(
       'Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. Add them in Vercel → Project → Settings → Environment Variables (Production and Preview).'
